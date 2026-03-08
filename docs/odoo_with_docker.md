@@ -44,7 +44,8 @@ docker run -p 8069:8069 --name odoo --link db:db -t odoo
 
 
 ## Running with a Docker Volume (Better)
-If you remove the `odoo` container, the filestore (odoo data) is lost. To prevent this run the container with a **Docker volume**
+If you remove the `odoo` container, the filestore (odoo data) is lost. To prevent this run the container with a **Docker volume**.
+
 Likewise, if you remove the `db` container, the DB data is lost.
 
 1) Create and start the DB instance and its named module
