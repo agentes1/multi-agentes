@@ -1,0 +1,13 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Cachés
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Variables sensibles
+.env
+.env.*

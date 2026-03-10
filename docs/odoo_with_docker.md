@@ -26,7 +26,7 @@ docker start db odoo
 - `-e` set environment variables
 - `--name` name our container/instance
 - `-v` volume
-  - `-v volume_name:path/to/container/mount_point` or `-v path/to/volume/data:path/to/container/mount_point` 
+  - `-v volume_name:path/to/container/mount_point` or `-v path/to/volume/data:path/to/container/mount_point`
   - `path/to/container/mount_point` is where you mount data for an image, if you have a container `container_name` this path is typically `/var/lib/container_name`
 - `-t` terminal/TTY
 - The final argument, like `postgres:15` at the end of a `docker run` command is the __Docker Image__
@@ -34,7 +34,7 @@ docker start db odoo
 
 ## Running without a volume
 1) Create & Run the DB Container/Instance:
-```bash 
+```bash
 docker run -d -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres --name db postgres:15
 ```
 2) Create & Run the Odoo instance, connecting it to the DB instance:
@@ -52,7 +52,7 @@ Likewise, if you remove the `db` container, the DB data is lost.
 ```bash
 docker run -d -v odoo-db:/var/lib/postgresql/data -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo -e POSTGRES_DB=postgres --name db postgres:15
 ```
-2) Create and start both the odoo instance and a named volume 
+2) Create and start both the odoo instance and a named volume
 ```bash
 docker run -v odoo-data:/var/lib/odoo -d -p 8069:8069 --name odoo --link db:db -t odoo
 ```
