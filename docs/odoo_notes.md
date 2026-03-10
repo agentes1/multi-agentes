@@ -104,12 +104,12 @@ select * from table_name;
 
 ## Module Data Directories
 Data directories in modules follow a naming convention
-- `models` ORM stuff, define tables with fields 
+- `models` ORM stuff, define tables with fields
 - `data` files importing data
-- `security` data related to security 
+- `security` data related to security
 - `views` when data is related to views and actions
 
-Additionally, all these files must be declared in the `data` list within the module's `__manifest__.py` 
+Additionally, all these files must be declared in the `data` list within the module's `__manifest__.py`
 
 ## How is a Module's Data Loaded?
 Take this example:
@@ -161,9 +161,9 @@ We must update the `data` list in `__manifest__.py` with `views/estate_property_
 Model <-> Action <-> Menu
 
 
-Odoo cuenta con un framework completo que cubre ya tanto la capa de datos como la interfaz 
+Odoo cuenta con un framework completo que cubre ya tanto la capa de datos como la interfaz
     permite definir tablas y triggers mediante un ORM
-    y definir acciones y menus mediante xml 
+    y definir acciones y menus mediante xml
     en resumen permite hacer mucho con pocas lineas de codigo
 Y tambien cuenta con documentacion exhaustiva.
 Estamos investigandolo para poder integrarlo en nuestro projecto
@@ -182,4 +182,3 @@ si agente habla con cliente q ha hablado mucho, mejor ir al rag?
 
 usar vllm, sglang, en vez de ollama
 usar tai para optimizar los embeddings
-

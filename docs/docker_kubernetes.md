@@ -16,9 +16,9 @@
   - Its difficult for apps to run from lots of small pieces
   - Running multiple instances of the same thing _(microservices)_ even more complicated
 - __... We need a solution that takes care of all these things__
-  - Enter Container Platforms 
+  - Enter Container Platforms
   - Enter Container Orchestration Platforms
- 
+
 # Containers
 - __Definition:__ Processes with added isolation & resource management
   - Seems like completely separate system, really just a process using isolation techniques
@@ -26,7 +26,7 @@
 - __How does it magically seem like a VM?__
   Thanks to standards and OS features
     - __Linux namespaces__
-      - UTS: Hostname & Domain name 
+      - UTS: Hostname & Domain name
       - MNT: Mounted filesystems
       - IPC - inter process communication
       - PID - processes
@@ -36,15 +36,15 @@
       - Limit how much resources a container can use
 - __Open Container Initiative__
   - [OCI](https://opencontainers.org/), [Github](https://github.com/opencontainers)
-  - [Linux Foundation](https://www.linuxfoundation.org/) project started by [Docker](https://www.docker.com/), [CoreOS](https://fedoraproject.org/coreos/) and maintainers of [appc](https://github.com/appc/) in 2015 
+  - [Linux Foundation](https://www.linuxfoundation.org/) project started by [Docker](https://www.docker.com/), [CoreOS](https://fedoraproject.org/coreos/) and maintainers of [appc](https://github.com/appc/) in 2015
   - Design open stardards for OS level virtualization (containers)
- 
+
 # Container Ecosystem Overview
 - __Container Platforms__
   - What [Docker](https://www.docker.com/) and [DockerHub](https://hub.docker.com/) offer
 - __Container Runtimes__
   - __High Level__
-    - [Docker Engine](https://docs.docker.com/engine/) 
+    - [Docker Engine](https://docs.docker.com/engine/)
     - [Podman](https://podman.io/) <small>_open source, daemonless_</small>
   - __Mid Level__
     - [ContainerD](https://containerd.io/) <small>_daemon based, used by Docker and Kubernetes, developed by Docker and now a [CNFC](https://www.cncf.io/) project_</small>
@@ -58,7 +58,7 @@
     - SUSE Rancher, RedHat Openshift ...<small>_open source, enterprise solutions, paid business model_</small>
     - __For single machine, local development__
       - [MiniKube](https://minikube.sigs.k8s.io/docs/) <small>_official kubernetes tool_</small>
-      - [Kind](https://minikube.sigs.k8s.io/docs/) <small>Kubernetes in Docker</small> 
+      - [Kind](https://minikube.sigs.k8s.io/docs/) <small>Kubernetes in Docker</small>
     - __Cloud Kubernetes__
       - [GKE - Google Kubernetes Engine](https://cloud.google.com/kubernetes-engine?hl=en)
       - [EKS - Amazon Kubernetes Service](https://aws.amazon.com/eks/)
@@ -70,7 +70,7 @@
     - [Amazon ECS - Elastic Container Service](https://aws.amazon.com/es/ecs/)
 - __Other__
   - [Buildah](https://buildah.io/) <small>_(container image builder, used internally by podman)_</small>
- 
+
 # Docker
 - __Architecture:__
   - Docker Engine <small>_(Docker CLI + [dockerd](https://docs.docker.com/reference/cli/dockerd/))_</small>
@@ -101,15 +101,15 @@
   4. `containerd` sets up the container environment and executes `runc` to run the container
   5. `containerd` will then monitor and manage the container throughtout its lifecycle
 <center>
-    <img width='70%' src='https://miro.medium.com/v2/resize:fit:720/format:webp/0*kDJEckrqtk653KL_'> 
-    <img width='70%' src='https://www.docker.com/app/uploads/2024/03/containerd-diagram-v1-1110x782.png'> 
+    <img width='70%' src='https://miro.medium.com/v2/resize:fit:720/format:webp/0*kDJEckrqtk653KL_'>
+    <img width='70%' src='https://www.docker.com/app/uploads/2024/03/containerd-diagram-v1-1110x782.png'>
 </center>
 
- 
+
 # Kubernetes [UNFINISHED]
 - [CRI](https://kubernetes.io/blog/2016/12/container-runtime-interface-cri-in-kubernetes/) Container Runtime Interface
 - __Cross Cutting Concerns__ <small>_apply to all container orchestration software_</small>
-  - __Dynamic Scheduling__ Allocations of containers to a server can change due to failure or configuration changes 
+  - __Dynamic Scheduling__ Allocations of containers to a server can change due to failure or configuration changes
   - __Distributed State__ Cluster must know what containers are running and where, even during HW or network failures
   - __Multitenancy__ It must be possible to run multiple appllications in a single cluster
   - __HW Isolation__ Clusters must run anywhere and we don't care about the underlying HW (cloud, type of server ...)
@@ -122,7 +122,7 @@
     ```
     apiVersion: apps/v1             # version of the kubernetes API schema used
     kind: Deployment                # tells kubernetes this is a deployment configuration
-    metadata:                       
+    metadata:
       name: my-app                  # unique name for the deployment
     spec:                           # desired state of the deoployment
       replicas: 3                   # Desired number of pods
@@ -130,8 +130,8 @@
         matchLabels:                # must mathc labels in 'template'
           app: my-app               # MUST match template label below
       template:                     # blueprint for the pods the deployment will create
-        metadata:                   
-          labels:                   
+        metadata:
+          labels:
             app: my-app             # Label applied to created pods
         spec:
           containers:               # list of containers to run
@@ -140,7 +140,7 @@
             ports:
             - containerPort: 80
     ```
-  - `service.yaml` - 
+  - `service.yaml` -
     ```
     apiVersion: v1
     kind: Service
@@ -156,11 +156,11 @@
           targetPort: 80            # Traffic forwarded to container port 80 (pod/container port) (matches EXPOSE in dockerfile)
           nodePort: 30080           # external port, what you use to access app outside of cluster
     ```
- 
+
 # Terminology
 - __[Daemon](https://grokipedia.com/page/Daemon_(computing)):__ Background process that is detatched from terminal runs persistently and provides an API or service. They often run as root, are run by `init` or `systemd` and live for the entire life of the OS.
 - __[Shim process](https://en.wikipedia.org/wiki/Shim_(computing)):__ A process that acts like a wrapper calling some API or running another process.
- 
+
 # Sources
 - [OCI Wikipedia](https://en.wikipedia.org/wiki/Open_Container_Initiative)
 - [Docker blog](https://www.docker.com/blog/containerd-vs-docker/#:~:text=Docker%20builds%20on%20containerd%20to,%2C%20testing%2C%20verifying%2C%20and%20sharing)
@@ -168,12 +168,12 @@
 - [Kubernetes Up and Running](https://eddiejackson.net/azure/Kubernetes_book.pdf)
 - [Implementing a container runtime shim](https://iximiuz.com/en/posts/implementing-container-runtime-shim-2/#:~:text=Streaming%20container's%20stdout%20and%20stderr,exit%20code%20of%20the%20container.)
 - The rest of URLs in the document
- 
+
 # Examples
 ## Running a Container
 ```bash
                                             # Running commands in our system
-cat /etc/os-release 
+cat /etc/os-release
 ps -ef
 ip -br a                                    # see list of network devices
 uname -a                                    # see system info
@@ -186,8 +186,8 @@ yum install -y procps iproute               # install basic commands
 ```
 ## Filesystem Isolation
 ```bash
-mkdir /tmp/newroot 
-cp --parents /bin/bash /bin/ls /tmp/newroot         
+mkdir /tmp/newroot
+cp --parents /bin/bash /bin/ls /tmp/newroot
 cp --parents /lib64/ld-linux-x86-64.so.2 $(ldd /bin/bash /bin/ls | grep '=>' | awk '{print $3}') /tmp/newroot
 chroot /tmp/newroot /bin/bash
 ```
@@ -202,7 +202,7 @@ ps -f <container-PID>
 lsns | grep <container-PID>
 ```
 - As we can see, there is only loopback address, there is no bridge interface giving us network access like with docker, as this is a low level container runtime
-- A process running in a namespace sees a limited view of a particular system resource 
+- A process running in a namespace sees a limited view of a particular system resource
 - We can see what namespaces something is using, using the `lsns` command
 ## Network Isolation
 ### Listing & Making Network Namespaces
@@ -216,8 +216,8 @@ ip netns exec my_network_ns ping -c 1 localhost     # we can now ping it, but on
 ```
 ### Creating veth pair for Network Namespace
 1. We are going to create a virtual ethernet device (aka veth pair)
-    1. creating veth device called myveth-peer 
-    2. creating a veth device called myveth-host 
+    1. creating veth device called myveth-peer
+    2. creating a veth device called myveth-host
     3. placing myveth-peer in network namecape my_network_ns
 ```bash
 ip link set myveth-peer netns my_network_ns
@@ -236,7 +236,7 @@ ip link set dev myveth-host up                                          # turn t
 ```
 4. check it works
 ```bash
-ip a 
+ip a
 ip netns exec my_network_ns ip a
 ip netns exec my_network_ns ping -c 1 10.85.0.254                       # ping it from namespace
 
@@ -262,7 +262,7 @@ docker inspect -s nginx | jq '.[0].SizeRw'      # view the size of the image
 ```
 ### Image Versions & Layers
 ```bash
-docker pull redis:6.0.13-alpine             
+docker pull redis:6.0.13-alpine
 docker pull redis:6.2.3-alpine      # pull a different version
                                     # as we can see, both versions share some layers
 docker images | grep redis          # shows the full size of each image
@@ -282,7 +282,7 @@ FROM nginx
 # Add index.html
 RUN echo "<html><body><h1>Hello World!</h1></body></html>" > /usr/share/nginx/html/index.html
 ```
-2. `docker build -t IMAGENAME:TAG .` or `docker build -f DOCKERFILE -t IMAGENAME:TAG .` 
+2. `docker build -t IMAGENAME:TAG .` or `docker build -f DOCKERFILE -t IMAGENAME:TAG .`
     - TAG is optional
-    - __careful__ `.` will copy everything in current directory 
+    - __careful__ `.` will copy everything in current directory
 ## kubernetes [UNFINISHED]
