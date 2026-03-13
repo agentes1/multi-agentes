@@ -1,0 +1,89 @@
+# README — Agente_memory
+
+## 1. Qué hace
+
+Agente sencillo capaz de analizar correos electrónicos simulados, extraer información relevante y recordar los correos analizados previamente. El sistema funciona completamente en local utilizando LangChain para construir el agente y Ollama para ejecutar el modelo de lenguaje.
+
+El agente puede realizar dos tareas principales. La primera es analizar un correo y generar un resumen estructurado con información importante como la categoría del mensaje, el nivel de urgencia y si requiere alguna acción. La segunda es recordar los correos que ya se han analizado y responder preguntas sobre ellos utilizando la información almacenada en memoria.
+
+El objetivo de este ejemplo es demostrar cómo construir un agente que no solo procese información en un momento puntual, sino que también sea capaz de recordar datos de interacciones anteriores y utilizarlos posteriormente.
+
+## 2. Tecnologías utilizadas
+
+El sistema utiliza varias piezas que trabajan juntas.
+
+LangChain se utiliza para construir el agente, gestionar herramientas y coordinar la interacción con el modelo de lenguaje.
+
+Ollama permite ejecutar modelos de lenguaje de forma local sin depender de servicios externos. El agente utiliza un modelo ejecutado en Ollama para analizar el contenido de los correos.
+
+LangGraph proporciona el sistema de persistencia y memoria que utiliza el agente para recordar información entre interacciones.
+
+Pydantic se utiliza para definir estructuras de datos claras y validar tanto los correos de entrada como los resultados del análisis.
+
+## 3. Qué problema intenta resolver
+
+Cuando se construyen agentes conversacionales, un problema frecuente es que el modelo de lenguaje no recuerda información pasada de forma fiable. Aunque el historial de mensajes puede proporcionar algo de contexto, el modelo tiene que reinterpretar ese historial cada vez que responde.
+
+Se evita ese problema almacenando información importante de forma estructurada en la memoria del agente. En lugar de depender únicamente del texto de la conversación, el agente guarda los correos analizados en una estructura de datos accesible que puede consultarse posteriormente.
+
+De esta manera, cuando el usuario pregunta por correos anteriores, el agente puede recuperar esa información directamente desde la memoria en lugar de intentar deducirla del historial.
+
+## 4. Cómo funciona el sistema
+
+Primero, el usuario envía un correo al agente. En este ejemplo los correos están simulados mediante objetos JSON que contienen remitente, destinatario, asunto y cuerpo del mensaje.
+
+El agente recibe ese correo y decide utilizar una herramienta llamada analizar_email. Esta herramienta toma el contenido del correo y lo envía al modelo de lenguaje para obtener un análisis estructurado.
+
+El modelo examina el texto del correo y genera un resultado que incluye el idioma detectado, la categoría del mensaje, el nivel de urgencia, un resumen breve y si requiere alguna acción.
+
+Una vez generado el análisis, el agente guarda toda esa información en su memoria interna. Esta memoria es una estructura de datos que contiene todos los correos que han sido analizados durante la conversación.
+
+Cada vez que se analiza un nuevo correo, se añade un nuevo registro a esa memoria.
+
+Cuando el usuario realiza una pregunta sobre correos anteriores, el agente utiliza una segunda herramienta llamada consultar_memoria_correos. Esta herramienta accede a la memoria del agente y recupera la información relevante para responder a la consulta.
+
+En lugar de depender del historial de conversación, el agente consulta directamente la lista de correos analizados y utiliza el modelo de lenguaje para generar una respuesta basada únicamente en esos datos.
+
+## 5. Cómo se guarda la memoria
+
+El agente utiliza un sistema de estado personalizado que incluye dos elementos importantes.
+
+El primero es una lista llamada analyzed_emails que almacena todos los correos analizados junto con su resultado.
+
+El segundo es last_email_summary, que contiene el análisis del último correo procesado.
+
+Cada vez que la herramienta analizar_email se ejecuta, actualiza este estado utilizando un mecanismo llamado Command(update). Esto permite guardar información nueva en la memoria del agente.
+
+Esta memoria se mantiene gracias a un componente llamado checkpointer. En este caso se utiliza InMemorySaver, que guarda el estado del agente en memoria RAM durante la ejecución del programa.
+
+Mientras el programa siga en ejecución y se utilice el mismo identificador de conversación, el agente puede acceder a la información previamente almacenada.
+
+## 6. Qué papel tienen las herramientas del agente
+
+El agente dispone de dos herramientas principales.
+
+La herramienta analizar_email se encarga de procesar un correo electrónico, generar su análisis y guardarlo en memoria.
+
+La herramienta consultar_memoria_correos permite buscar información dentro de los correos ya analizados y responder preguntas sobre ellos.
+
+El agente decide automáticamente cuándo debe utilizar cada herramienta en función de la pregunta del usuario.
+
+## 7. Cómo se mantiene el contexto entre interacciones
+
+El sistema utiliza un identificador llamado thread_id para asociar todas las interacciones a una misma conversación.
+
+Cada vez que el agente procesa una solicitud, el estado de la conversación se guarda asociado a ese identificador. Cuando llega una nueva pregunta con el mismo thread_id, el agente recupera el estado previamente guardado.
+
+Esto permite que el agente recuerde los correos analizados anteriormente y utilice esa información en nuevas respuestas.
+
+## 8. Qué ocurre durante la ejecución del script
+
+El script de ejemplo realiza tres interacciones consecutivas.
+
+En la primera interacción el agente analiza un correo relacionado con una factura incorrecta.
+
+En la segunda interacción analiza un segundo correo relacionado con una entrevista.
+
+En la tercera interacción el usuario pregunta qué información importante recuerda de los correos anteriores.
+
+El agente consulta su memoria interna, recupera los correos almacenados y genera una respuesta basada en esa información.
