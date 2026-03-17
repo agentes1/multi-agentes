@@ -1,366 +1,250 @@
-from __future__ import annotations
-
-# streaming + memoria compartida entre agentes dentro del ecosistema LangChain.
-# LangGraph se apoya en un grafo con estado compartido, así que cada nodo
-# puede leer lo que dejó el anterior y escribir su parte del trabajo.
+import asyncio
 import json
-from typing import Literal, NotRequired, TypedDict
+import sys
+from pathlib import Path
+from typing import Annotated, TypedDict
 
-import requests
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from langgraph.graph.message import add_messages
+
+# Resuelvo rutas absolutas a partir de la ubicación de este archivo.
+# Así evito errores típicos cuando ejecuto el script desde otra carpeta.
+THIS_FILE = Path(__file__).resolve()
+PROJECT_ROOT = THIS_FILE.parent.parent
+MCP_SERVER_PATH = PROJECT_ROOT / "mcp" / "mcp_servidor_precios.py"
 
 
-# entrada de tipo pseudo-email
-class EmailInput(BaseModel):
-    from_email: str
-    to_email: str
-    subject: str
-    body: str
+class BudgetState(TypedDict):
+    # Guardo los mensajes para poder inspeccionar la ejecución y dejar abierta
+    # la posibilidad de ampliar esto luego a conversación multi-turno.
+    messages: Annotated[list, add_messages]
+
+    # Este es el JSON de entrada original.
+    input_json: dict
+
+    # Aquí guardo la versión normalizada de la solicitud.
+    normalized_request: dict
+
+    # Lista de productos del catálogo que vamos a presupuestar.
+    selected_products: list[str]
+
+    # Resultado estructurado que devuelve el MCP.
+    quote_result: dict
+
+    # Texto final del presupuesto redactado.
+    final_text: str
 
 
-# Este primer esquema representa lo que extrae el agente analizador.
-class BudgetRequestAnalysis(BaseModel):
-    language: str = Field(description="Idioma detectado, por ejemplo es o en")
-    customer_name: str | None = Field(default=None, description="Nombre del cliente si aparece")
-    company_name: str | None = Field(default=None, description="Empresa del cliente si aparece")
-    request_type: Literal["automatizacion", "ia", "consultoria", "soporte", "otro"]
-    summary: str = Field(description="Resumen breve en español")
-    requested_services: list[str] = Field(default_factory=list)
-    requirements: list[str] = Field(default_factory=list)
-    urgency: Literal["baja", "media", "alta"]
-    needs_follow_up: bool
-    missing_info: list[str] = Field(default_factory=list)
-
-
-# Cada línea del presupuesto se representa por separado
-class BudgetLine(BaseModel):
-    concept: str
-    quantity: int
-    unit_price_eur: float
-    subtotal_eur: float
-    notes: str
-
-
-# Salida final
-class BudgetOutput(BaseModel):
-    customer_name: str | None = None
-    company_name: str | None = None
-    project_title: str
-    project_summary: str
-    lines: list[BudgetLine] = Field(default_factory=list)
-    subtotal_eur: float
-    tax_percent: float
-    tax_amount_eur: float
-    total_eur: float
-    assumptions: list[str] = Field(default_factory=list)
-    notes: list[str] = Field(default_factory=list)
-    status: Literal["borrador", "pendiente_revision"]
-
-
-# Este TypedDict es el estado compartido del grafo.
-# el analizador escribe su salida, el nodo de memoria la complementa,
-# y el generador de presupuesto la reutiliza después.
-class AgentState(TypedDict):
-    email: EmailInput
-    analysis: NotRequired[dict]
-    customer_memory: NotRequired[dict]
-    pricing_data: NotRequired[list[dict]]
-    budget: NotRequired[dict]
-    trace: NotRequired[list[str]]
-
-
-# LangChain documenta streaming en sus chat models mediante stream/invoke;
+# Uso Ollama en local.
+# Temperatura 0 para que la prueba sea más estable y repetible.
 llm = ChatOllama(
-    model="qwen2.5:3b",
-    base_url="http://localhost:11434",
+    model="llama3.1",
     temperature=0,
 )
 
-analysis_llm = llm.with_structured_output(BudgetRequestAnalysis)
-budget_llm = llm.with_structured_output(BudgetOutput)
 
-# Checkpointer en memoria para mantener estado por thread_id.
-checkpointer = InMemorySaver()
-
-# Memoria larga simple
-LONG_TERM_MEMORY: dict[str, dict] = {}
-
-
-def append_trace(state: AgentState, message: str) -> list[str]:
-    current = state.get("trace", [])
-    return current + [message]
-
-
-def load_customer_memory(state: AgentState) -> AgentState:
-    # Este nodo no llama al LLM. Su único papel es recuperar memoria previa del cliente.
-    email = state["email"]
-    customer_key = email.from_email.lower()
-
-    memory = LONG_TERM_MEMORY.get(
-        customer_key,
-        {
-            "known_services": [],
-            "last_company_name": None,
-            "last_summary": None,
-        },
-    )
-
-    return {
-        "customer_memory": memory,
-        "trace": append_trace(state, f"Memoria cargada para {customer_key}"),
+def map_requirements_to_products(requirements: list[str]) -> list[str]:
+    # Este mapeo es simple a propósito para que la demo sea fácil de entender.
+    # Mañana esto podría vivir en configuración, base de datos o incluso en Odoo.
+    mapping = {
+        "crm": "crm_base",
+        "emails": "email_ai",
+        "presupuestos": "quotation_ai",
+        "odoo": "odoo_connector",
+        "dashboard": "dashboard",
     }
 
+    products = []
+    for req in requirements:
+        code = mapping.get(str(req).lower().strip())
+        if code and code not in products:
+            products.append(code)
 
-def analyze_email(state: AgentState) -> AgentState:
-    # Aquí actúa el primer "agente": interpreta el correo y lo convierte
-    email = state["email"]
-    customer_memory = state.get("customer_memory", {})
+    return products
+
+
+async def intake_agent(state: BudgetState) -> dict:
+    # Este primer agente interpreta el JSON y lo deja normalizado para el resto.
+    payload = state["input_json"]
 
     prompt = f"""
-Eres un agente analizador de oportunidades comerciales.
+Eres un agente comercial que analiza solicitudes para preparar presupuestos de automatización.
 
-Tu tarea es leer el email y devolver únicamente la estructura solicitada.
+A partir del JSON de entrada, devuelve un JSON con esta estructura exacta:
+{{
+  "company_name": "...",
+  "project_summary": "...",
+  "requirements": ["crm", "emails", "presupuestos", "odoo", "dashboard"],
+  "urgency": "baja|media|alta"
+}}
 
-Contexto previo del cliente:
-{json.dumps(customer_memory, ensure_ascii=False, indent=2)}
+Solo puedes usar esos valores de requirements si aplican.
+Si algo no aparece claramente, no lo inventes.
 
-Reglas:
-- Resume en español
-- No inventes datos
-- request_type debe ser: automatizacion, ia, consultoria, soporte, otro
-- requested_services debe contener servicios concretos detectados
-- requirements debe contener requisitos concretos si aparecen
-- needs_follow_up debe ser true si faltan datos importantes
-
-EMAIL:
-From: {email.from_email}
-To: {email.to_email}
-Subject: {email.subject}
-
-Body:
-{email.body}
+JSON de entrada:
+{json.dumps(payload, ensure_ascii=False, indent=2)}
 """
 
-    analysis = analysis_llm.invoke(prompt)
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    content = response.content if isinstance(response.content, str) else str(response.content)
 
-    return {
-        "analysis": analysis.model_dump(),
-        "trace": append_trace(state, "Email analizado por el agente analizador"),
-    }
-
-
-def query_mcp_price(service_name: str) -> dict:
-    # Esta función es el puente más simple entre el flujo LangGraph y el servidor MCP.
-    # Para una PoC es suficiente y fácil de depurar.
-    # La llamada se hace contra el servidor que has levantado en el otro archivo.
+    # Intento parsear directamente el JSON devuelto por el modelo.
+    # Si no sale perfecto, hago un fallback para no bloquear la demo.
     try:
-        # Ejemplo corto y práctico.
-        response = requests.post(
-            "http://localhost:8000/mcp/tool/get_service_price",
-            json={"service_name": service_name},
-            timeout=5,
-        )
-        response.raise_for_status()
-        return response.json()
+        normalized = json.loads(content)
     except Exception:
-        return {
-            "found": False,
-            "service_name": service_name,
-            "base_price": 0,
-            "description": "No se pudo consultar el servicio en el servidor MCP",
+        normalized = {
+            "company_name": payload.get("company_name", "Desconocido"),
+            "project_summary": payload.get("summary", ""),
+            "requirements": payload.get("requirements", []),
+            "urgency": payload.get("urgency", "media"),
         }
 
-
-def enrich_with_pricing(state: AgentState) -> AgentState:
-    analysis = state["analysis"]
-    requested_services = analysis.get("requested_services", [])
-
-    pricing_data = []
-    service_map = {
-        "consultoría": "consultoria",
-        "consultoria": "consultoria",
-        "automatización": "automatizacion_simple",
-        "automatizacion": "automatizacion_simple",
-        "clasificación de emails": "clasificacion_emails",
-        "clasificacion de emails": "clasificacion_emails",
-        "respuestas ia": "respuestas_ia",
-        "respuestas con ia": "respuestas_ia",
-        "integración api": "integracion_api",
-        "integracion api": "integracion_api",
-    }
-
-    for service in requested_services:
-        normalized = service_map.get(service.strip().lower())
-        if normalized:
-            pricing_data.append(query_mcp_price(normalized))
+    selected_products = map_requirements_to_products(normalized.get("requirements", []))
 
     return {
-        "pricing_data": pricing_data,
-        "trace": append_trace(state, "Precios consultados vía servidor MCP"),
+        "messages": [
+            AIMessage(
+                content=f"Solicitud normalizada: {json.dumps(normalized, ensure_ascii=False)}"
+            )
+        ],
+        "normalized_request": normalized,
+        "selected_products": selected_products,
     }
 
 
-def build_budget(state: AgentState) -> AgentState:
-    # Este es el segundo "agente": usa el análisis previo, la memoria del cliente
-    # y la información económica externa para construir el presupuesto.
-    # no repetimos el trabajo del primer nodo, sino que reaprovechamos su salida.
-    email = state["email"]
-    analysis = state["analysis"]
-    customer_memory = state.get("customer_memory", {})
-    pricing_data = state.get("pricing_data", [])
+async def pricing_agent(state: BudgetState) -> dict:
+    # Aquí conecto con el MCP usando ruta absoluta y el mismo intérprete Python
+    # con el que estoy ejecutando este script. En Windows esto evita muchos fallos.
+    if not MCP_SERVER_PATH.exists():
+        raise FileNotFoundError(f"No encuentro el servidor MCP en esta ruta: {MCP_SERVER_PATH}")
 
-    prompt = f"""
-Eres un agente generador de presupuestos.
+    client = MultiServerMCPClient(
+        {
+            "odoo_budget": {
+                "transport": "stdio",
+                "command": sys.executable,
+                "args": [str(MCP_SERVER_PATH)],
+            }
+        }
+    )
 
-Debes devolver únicamente la estructura solicitada.
-Estás generando un presupuesto borrador, no definitivo.
+    # Abro una sesión con el servidor MCP y cargo sus tools.
+    async with client.session("odoo_budget") as session:
+        tools = await load_mcp_tools(session)
+        tools_by_name = {tool.name: tool for tool in tools}
 
-EMAIL ORIGINAL:
-From: {email.from_email}
-To: {email.to_email}
-Subject: {email.subject}
+        company_name = state["normalized_request"].get("company_name", "Desconocido")
+        selected_products = state.get("selected_products", [])
 
-Body:
-{email.body}
+        customer_profile = await tools_by_name["get_customer_profile"].ainvoke(
+            {"company_name": company_name}
+        )
 
-ANÁLISIS DEL AGENTE ANTERIOR:
-{json.dumps(analysis, ensure_ascii=False, indent=2)}
+        quote = await tools_by_name["calculate_quote"].ainvoke(
+            {
+                "product_codes": selected_products,
+                "company_name": company_name,
+            }
+        )
 
-MEMORIA PREVIA DEL CLIENTE:
-{json.dumps(customer_memory, ensure_ascii=False, indent=2)}
+        final_prompt = f"""
+Eres un agente de preventa.
 
-PRECIOS CONSULTADOS EXTERNAMENTE:
-{json.dumps(pricing_data, ensure_ascii=False, indent=2)}
+Redacta un presupuesto claro y breve en español usando estos datos.
 
-Reglas:
-- Escribe todo en español
-- Usa tax_percent = 21
-- Calcula subtotal, IVA y total correctamente
-- Si faltan datos relevantes, status = pendiente_revision
-- Si hay precios externos disponibles, úsalos como base
-- No inventes integraciones complejas
-- Mantén el presupuesto simple
+Solicitud normalizada:
+{json.dumps(state["normalized_request"], ensure_ascii=False, indent=2)}
+
+Perfil del cliente:
+{json.dumps(customer_profile, ensure_ascii=False, indent=2)}
+
+Resultado del presupuesto:
+{json.dumps(quote, ensure_ascii=False, indent=2)}
+
+Quiero una salida con:
+- Resumen del proyecto
+- Módulos incluidos
+- Subtotal
+- Descuento
+- Total final
+- Nota final indicando que el presupuesto es preliminar
 """
 
-    budget = budget_llm.invoke(prompt)
+        final_response = await llm.ainvoke([HumanMessage(content=final_prompt)])
+        final_text = (
+            final_response.content
+            if isinstance(final_response.content, str)
+            else str(final_response.content)
+        )
 
     return {
-        "budget": budget.model_dump(),
-        "trace": append_trace(state, "Presupuesto generado por el agente presupuestador"),
+        "messages": [AIMessage(content=final_text)],
+        "quote_result": quote,
+        "final_text": final_text,
     }
 
 
-def save_customer_memory(state: AgentState) -> AgentState:
-    # Este nodo actualiza una memoria sencilla de largo plazo.
-    # La guardamos por email del cliente.
-    email = state["email"]
-    analysis = state["analysis"]
+def build_graph():
+    # Monto un grafo mínimo con dos nodos.
+    # El primero analiza la solicitud y el segundo consulta el MCP y compone el presupuesto.
+    builder = StateGraph(BudgetState)
 
-    customer_key = email.from_email.lower()
-    previous = LONG_TERM_MEMORY.get(
-        customer_key,
-        {
-            "known_services": [],
-            "last_company_name": None,
-            "last_summary": None,
-        },
-    )
+    builder.add_node("intake_agent", intake_agent)
+    builder.add_node("pricing_agent", pricing_agent)
 
-    merged_services = list(
-        {
-            *previous.get("known_services", []),
-            *analysis.get("requested_services", []),
-        }
-    )
+    builder.add_edge(START, "intake_agent")
+    builder.add_edge("intake_agent", "pricing_agent")
+    builder.add_edge("pricing_agent", END)
 
-    LONG_TERM_MEMORY[customer_key] = {
-        "known_services": merged_services,
-        "last_company_name": analysis.get("company_name") or previous.get("last_company_name"),
-        "last_summary": analysis.get("summary"),
+    # Esto me da memoria/checkpoints por thread_id.
+    checkpointer = InMemorySaver()
+    return builder.compile(checkpointer=checkpointer)
+
+
+async def main():
+    # Antes de ejecutar, valido la ruta del MCP para que el error sea claro.
+    print(f"Proyecto raíz: {PROJECT_ROOT}")
+    print(f"Servidor MCP: {MCP_SERVER_PATH}")
+
+    if not MCP_SERVER_PATH.exists():
+        raise FileNotFoundError(f"No existe el fichero del MCP en: {MCP_SERVER_PATH}")
+
+    graph = build_graph()
+
+    input_payload = {
+        "company_name": "ACME",
+        "summary": "Queremos automatizar la clasificación de emails, generar presupuestos y conectar el flujo comercial con Odoo",
+        "requirements": ["emails", "presupuestos", "odoo", "crm"],
+        "urgency": "alta",
     }
 
-    return {"trace": append_trace(state, "Memoria de largo plazo actualizada")}
+    initial_state: BudgetState = {
+        "messages": [HumanMessage(content="Genera un presupuesto a partir del JSON recibido")],
+        "input_json": input_payload,
+        "normalized_request": {},
+        "selected_products": [],
+        "quote_result": {},
+        "final_text": "",
+    }
 
+    config = {"configurable": {"thread_id": "demo-acme-001"}}
 
-# Construimos el grafo.
-graph_builder = StateGraph(AgentState)
+    # Muestro streaming de actualizaciones del grafo.
+    async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
+        print("\n=== CHUNK ===")
+        print(chunk)
 
-# Añadimos nodos. Cada nodo hace una responsabilidad concreta.
-graph_builder.add_node("load_customer_memory", load_customer_memory)
-graph_builder.add_node("analyze_email", analyze_email)
-graph_builder.add_node("enrich_with_pricing", enrich_with_pricing)
-graph_builder.add_node("build_budget", build_budget)
-graph_builder.add_node("save_customer_memory", save_customer_memory)
+    final_state = await graph.ainvoke(initial_state, config=config)
 
-# Definimos el orden del flujo.
-graph_builder.add_edge(START, "load_customer_memory")
-graph_builder.add_edge("load_customer_memory", "analyze_email")
-graph_builder.add_edge("analyze_email", "enrich_with_pricing")
-graph_builder.add_edge("enrich_with_pricing", "build_budget")
-graph_builder.add_edge("build_budget", "save_customer_memory")
-graph_builder.add_edge("save_customer_memory", END)
-
-# Compilamos con checkpointer para tener estado asociado a un thread_id y poder continuar.
-graph = graph_builder.compile(checkpointer=checkpointer)
-
-
-def run_with_streaming(email: EmailInput, thread_id: str = "demo-thread") -> dict:
-    # Aquí aplicamos STREAMING.
-    # En vez de esperar al final, vamos viendo cómo avanza el flujo nodo a nodo.
-    # final_state = None
-
-    for event in graph.stream(
-        {"email": email},
-        config={"configurable": {"thread_id": thread_id}},
-        stream_mode="updates",
-    ):
-        print("\n[STREAM EVENT]")
-        print(json.dumps(event, ensure_ascii=False, indent=2, default=str))
-        # final_state = event
-
-    # Después del streaming, recuperamos el estado consolidado.
-    snapshot = graph.get_state({"configurable": {"thread_id": thread_id}})
-
-    return snapshot.values
+    print("\n=== PRESUPUESTO FINAL ===\n")
+    print(final_state["final_text"])
 
 
 if __name__ == "__main__":
-    # Primer email del cliente.
-    fake_email_1 = EmailInput(
-        from_email="cliente@empresa.com",
-        to_email="presupuestos@tuempresa.com",
-        subject="Queremos automatizar emails de soporte",
-        body=(
-            "Hola, soy Marta de BlueNova. "
-            "Queremos clasificar emails de clientes automáticamente "
-            "y generar una primera respuesta con IA para consultas frecuentes. "
-            "Buscamos una propuesta sencilla para empezar este mes."
-        ),
-    )
-
-    result_1 = run_with_streaming(fake_email_1, thread_id="cliente-bluenova")
-
-    print("\n=== RESULTADO FINAL PRIMERA EJECUCIÓN ===")
-    print(json.dumps(result_1, ensure_ascii=False, indent=2, default=str))
-
-    # Segunda ejecución del mismo cliente para comprobar memoria entre ejecuciones.
-    fake_email_2 = EmailInput(
-        from_email="cliente@empresa.com",
-        to_email="presupuestos@tuempresa.com",
-        subject="Añadimos también integración API",
-        body=(
-            "Hola de nuevo. Además de lo anterior, nos interesa una integración básica "
-            "con nuestra API interna para registrar tickets."
-        ),
-    )
-
-    result_2 = run_with_streaming(fake_email_2, thread_id="cliente-bluenova")
-
-    print("\n=== RESULTADO FINAL SEGUNDA EJECUCIÓN ===")
-    print(json.dumps(result_2, ensure_ascii=False, indent=2, default=str))
-
-    print("\n=== MEMORIA DE LARGO PLAZO GUARDADA ===")
-    print(json.dumps(LONG_TERM_MEMORY, ensure_ascii=False, indent=2, default=str))
+    asyncio.run(main())
