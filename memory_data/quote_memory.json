@@ -1,0 +1,302 @@
+{
+  "ACME": [
+    {
+      "company_name": "ACME",
+      "normalized_request": {
+        "company_name": "ACME",
+        "project_summary": "Queremos automatizar la clasificación de emails, generar presupuestos y conectar el flujo comercial con Odoo",
+        "requirements": [
+          "emails",
+          "presupuestos",
+          "odoo",
+          "crm"
+        ],
+        "urgency": "alta",
+        "missing_information": []
+      },
+      "selected_products": [
+        "email_ai",
+        "quotation_ai",
+        "odoo_connector",
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "ACME",
+        "lines": [
+          {
+            "product_code": "email_ai",
+            "description": "Clasificación de emails con IA",
+            "unit_price": 1800.0,
+            "quantity": 1,
+            "line_total": 1800.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          },
+          {
+            "product_code": "odoo_connector",
+            "description": "Conector con Odoo",
+            "unit_price": 1500.0,
+            "quantity": 1,
+            "line_total": 1500.0
+          },
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 6700.0,
+        "discount": 670.0,
+        "total": 6030.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "",
+      "timestamp": "2026-03-22T19:02:27.637793+00:00"
+    },
+    {
+      "company_name": "ACME",
+      "normalized_request": {
+        "company_name": "ACME",
+        "project_summary": "Queremos automatizar la clasificación de emails, generar presupuestos y conectar el flujo comercial con Odoo",
+        "requirements": [
+          "emails",
+          "presupuestos",
+          "odoo",
+          "crm"
+        ],
+        "urgency": "alta",
+        "missing_information": []
+      },
+      "selected_products": [
+        "email_ai",
+        "quotation_ai",
+        "odoo_connector",
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "ACME",
+        "lines": [
+          {
+            "product_code": "email_ai",
+            "description": "Clasificación de emails con IA",
+            "unit_price": 1800.0,
+            "quantity": 1,
+            "line_total": 1800.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          },
+          {
+            "product_code": "odoo_connector",
+            "description": "Conector con Odoo",
+            "unit_price": 1500.0,
+            "quantity": 1,
+            "line_total": 1500.0
+          },
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 6700.0,
+        "discount": 670.0,
+        "total": 6030.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "",
+      "timestamp": "2026-03-22T19:02:52.520868+00:00"
+    },
+    {
+      "company_name": "ACME",
+      "normalized_request": {
+        "company_name": "ACME",
+        "project_summary": "Automatización comercial",
+        "requirements": [
+          "emails",
+          "presupuestos",
+          "odoo"
+        ],
+        "urgency": "alta",
+        "missing_information": []
+      },
+      "selected_products": [
+        "email_ai",
+        "quotation_ai",
+        "odoo_connector"
+      ],
+      "quote_result": {
+        "company_name": "ACME",
+        "lines": [
+          {
+            "product_code": "email_ai",
+            "description": "Clasificación de emails con IA",
+            "unit_price": 1800.0,
+            "quantity": 1,
+            "line_total": 1800.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          },
+          {
+            "product_code": "odoo_connector",
+            "description": "Conector con Odoo",
+            "unit_price": 1500.0,
+            "quantity": 1,
+            "line_total": 1500.0
+          }
+        ],
+        "subtotal": 5500.0,
+        "discount": 550.0,
+        "total": 4950.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "",
+      "timestamp": "2026-03-25T17:28:47.321175+00:00"
+    }
+  ],
+  "Desconocido": [
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {},
+      "selected_products": [],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [],
+        "subtotal": 0.0,
+        "discount": 0.0,
+        "total": 0.0,
+        "currency": "EUR",
+        "warnings": [
+          "No se han detectado productos presupuestables a partir de la solicitud"
+        ],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "",
+      "timestamp": "2026-03-25T17:18:17.275329+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "Comprar sillas para la oficina",
+        "requirements": [],
+        "urgency": "baja",
+        "missing_information": [
+          "tipo de silla",
+          "cantidad necesaria"
+        ]
+      },
+      "selected_products": [],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [],
+        "subtotal": 0.0,
+        "discount": 0.0,
+        "total": 0.0,
+        "currency": "EUR",
+        "warnings": [
+          "No se han detectado productos presupuestables a partir de la solicitud"
+        ],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "",
+      "timestamp": "2026-03-25T17:44:56.665852+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "Comprar sillas para la oficina",
+        "requirements": [],
+        "urgency": "baja",
+        "missing_information": [
+          "tipo de silla",
+          "cantidad necesaria"
+        ]
+      },
+      "selected_products": [],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [],
+        "subtotal": 0.0,
+        "discount": 0.0,
+        "total": 0.0,
+        "currency": "EUR",
+        "warnings": [
+          "No se han detectado productos presupuestables a partir de la solicitud"
+        ],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "",
+      "timestamp": "2026-03-25T18:00:40.538393+00:00"
+    }
+  ],
+  "Acme": [
+    {
+      "company_name": "Acme",
+      "normalized_request": {
+        "company_name": "Acme",
+        "project_summary": "Retomar proyecto y agregar presupuestos automáticos",
+        "requirements": [
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Acme",
+        "lines": [
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 2200.0,
+        "discount": 220.0,
+        "total": 1980.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "",
+      "timestamp": "2026-03-25T18:03:56.047968+00:00"
+    }
+  ]
+}
