@@ -137,3 +137,4 @@ Los errores en cualquier nodo redirigen a un `error_node` que cierra el grafo li
 - Reemplazar datos mock del MCP por llamadas reales a Odoo
 - Añadir listener de emails
 - Implementar resto de agentes
+- Modelo LLMs estudiados
