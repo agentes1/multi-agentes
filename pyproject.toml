@@ -1,27 +1,50 @@
+# ── Ruff: linter y formateador ────────────────────────────────────────────────
 [tool.ruff]
-line-length = 100
-target-version = "py311"
-force-exclude = true
+line-length = 100        # máximo de caracteres por línea
+target-version = "py311" # versión mínima de Python objetivo
+force-exclude = true     # respeta los excludes aunque se pase el fichero explícitamente
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM"]
-ignore = ["E501"]
+select = [
+    "E",   # errores de estilo PEP8
+    "F",   # errores de lógica (variables no usadas, imports no usados, etc)
+    "I",   # orden de imports (isort)
+    "B",   # bugbear: patrones comunes que causan bugs
+    "UP",  # modernización de sintaxis Python (pyupgrade)
+    "SIM", # simplificación de código innecesariamente complejo
+]
+ignore = [
+    "E501", # longitud de línea: ya la controla line-length arriba
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agents", "schemas", "services", "shared"] # paquetes propios del proyecto
 
 [tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
+quote-style = "double" # comillas dobles en strings
+indent-style = "space" # espacios en vez de tabs
+line-ending = "lf"     # saltos de línea Unix (evita problemas en Windows/Mac)
 
+
+# ── Mypy: comprobación estática de tipos ──────────────────────────────────────
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-no_implicit_optional = true
-check_untyped_defs = true
-pretty = true
+warn_return_any = true        # avisa si una función devuelve Any implícitamente
+warn_unused_configs = true    # avisa si hay opciones de mypy que no hacen nada
+disallow_untyped_defs = true  # obliga a tipar todos los argumentos y returns
+no_implicit_optional = true   # x: str = None debe escribirse como x: str | None = None
+check_untyped_defs = true     # comprueba también funciones sin anotaciones
+pretty = true                 # output más legible en terminal
 exclude = [
-  "^tests/data/",
-  "^build/",
-  "^dist/",
+    "^tests/",   # los tests no se comprueban con mypy
+    "^build/",   # carpeta de build generada automáticamente
+    "^dist/",    # carpeta de distribución generada automáticamente
 ]
+
+
+# ── Pytest: configuración de tests ────────────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"                    # todos los tests async se ejecutan sin decorador explícito
+testpaths = ["tests"]                    # carpeta donde pytest busca tests
+python_files = ["test_*.py"]            # patrón de ficheros de test
+python_functions = ["test_*"]           # patrón de funciones de test

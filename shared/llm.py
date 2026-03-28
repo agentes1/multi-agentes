@@ -3,8 +3,8 @@ from langchain_ollama import ChatOllama
 from shared.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE
 
 
-def get_llm() -> ChatOllama:
+def get_llm(model: str = OLLAMA_MODEL, temperature: int = OLLAMA_TEMPERATURE) -> ChatOllama:
     return ChatOllama(
-        model=OLLAMA_MODEL,
-        temperature=OLLAMA_TEMPERATURE,
+        model=model,
+        temperature=temperature,
     )

@@ -298,5 +298,266 @@
       "final_text": "",
       "timestamp": "2026-03-25T18:03:56.047968+00:00"
     }
+  ],
+  "Acme SL": [
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementar CRM y módulo de facturación con Odoo",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "alta",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y módulo de facturación con Odoo**\n\n**Resumen del proyecto:**\nImplementar CRM y módulo de facturación con Odoo.\n\n**Módulos incluidos:**\n\n* CRM Base\n* Módulo de Facturación\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede variar dependiendo de las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el historial previo de la empresa, aunque no se han encontrado anteriores solicitudes o presupuestos relacionados.",
+      "timestamp": "2026-03-28T13:14:55.070764+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo la última cotización realizada el 28/03/2026 por un importe total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:16:37.482059+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo la última cotización realizada el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:20:47.957773+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 4,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo su última cotización realizada el 28 de marzo de 2026 por un importe total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:21:49.032572+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 5,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:22:38.212371+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 6,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:23:15.771308+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 7,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:24:17.579983+00:00"
+    }
   ]
 }

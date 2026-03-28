@@ -1,17 +1,25 @@
 import json
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 
+from agents.intake_agent.dependencies import IntakeDependencies
 from agents.intake_agent.state import IntakeState
 from schemas.budget import NormalizedRequest
 from shared.catalog import normalize_requirement
-from shared.llm import get_llm
 
-llm = get_llm()
+
+# helper para obtener dependencias inyectadas desde el config del grafo
+def _get_deps(config: RunnableConfig) -> IntakeDependencies:
+    deps = config.get("configurable", {}).get("deps")
+    if deps is None:
+        raise RuntimeError("IntakeDependencies no inyectadas en config")
+    return deps
 
 
 # convierte diferentes formatos de entrada (email, chat, etc) a texto uniforme
-async def prepare_input_node(state: IntakeState) -> dict:
+# error si la entrada está vacía o el canal no tiene campos mínimos
+async def prepare_input_node(state: IntakeState, config: RunnableConfig) -> dict:
     source_input = state["source_input"]
     channel = source_input.get("channel", "unknown")
 
@@ -20,6 +28,12 @@ async def prepare_input_node(state: IntakeState) -> dict:
         body = source_input.get("body", "")
         sender = source_input.get("from", "")
 
+        # validación: un email sin asunto y sin cuerpo no tiene información útil
+        if not subject and not body:
+            return {
+                "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+            }
+
         text = f"""
 Canal: email
 Remitente: {sender}
@@ -27,10 +41,17 @@ Asunto: {subject}
 Mensaje:
 {body}
 """
+
     elif channel == "chat":
         user_name = source_input.get("user_name", "")
         message = source_input.get("message", "")
         company_name = source_input.get("company_name", "")
+
+        # validación: un mensaje de chat vacío no tiene información útil
+        if not message:
+            return {
+                "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+            }
 
         text = f"""
 Canal: chat
@@ -39,18 +60,28 @@ Empresa: {company_name}
 Mensaje:
 {message}
 """
+
     else:
-        # Fallback genérico para otros formatos
+        # fallback genérico para otros formatos no reconocidos
         text = str(source_input)
+
+        # validación: si el fallback también queda vacío no podemos continuar
+        if not text.strip():
+            return {
+                "error": f"Canal '{channel}' no reconocido y sin contenido procesable.",
+            }
 
     return {
         "messages": [AIMessage(content="Entrada convertida a texto unificado")],
         "extracted_text": text.strip(),
+        "error": None,
     }
 
 
-# obtener de cualquier texto un JSON estructurado
-async def extract_request_node(state: IntakeState) -> dict:
+# extrae del texto unificado un JSON estructurado usando el LLM
+# error si el LLM no devuelve nada mínimamente aprovechable
+async def extract_request_node(state: IntakeState, config: RunnableConfig) -> dict:
+    deps = _get_deps(config)
     extracted_text = state["extracted_text"]
 
     prompt = f"""
@@ -76,23 +107,19 @@ Texto del cliente:
 {extracted_text}
 """
 
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    response = await deps.llm.ainvoke([HumanMessage(content=prompt)])
     content = response.content if isinstance(response.content, str) else str(response.content)
 
     try:
         parsed = json.loads(content)
         normalized = NormalizedRequest.model_validate(parsed)
     except Exception:
-        # Fallback si el LLM no devuelve JSON válido
-        normalized = NormalizedRequest(
-            company_name="Desconocido",
-            project_summary=extracted_text[:200],
-            requirements=[],
-            urgency="media",
-            missing_information=["No se pudo parsear correctamente la solicitud"],
-        )
+        # si el LLM no devuelve JSON válido dos veces seguidas es un error real
+        return {
+            "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
+        }
 
-    # Normaliza requisitos usando catálogo compartido
+    # normaliza requisitos usando catálogo compartido para evitar sinónimos o variantes
     normalized_requirements = []
     for req in normalized.requirements:
         value = normalize_requirement(req)
@@ -106,10 +133,13 @@ Texto del cliente:
             AIMessage(content=f"Solicitud estructurada generada para {normalized.company_name}")
         ],
         "normalized_request": normalized.model_dump(),
+        "error": None,
     }
 
 
-async def validate_request_node(state: IntakeState) -> dict:
+# valida que la solicitud normalizada tenga los campos mínimos necesarios
+# no es bloqueante: los avisos se acumulan en validation_notes y el flujo continúa
+async def validate_request_node(state: IntakeState, config: RunnableConfig) -> dict:
     normalized_request = state["normalized_request"]
     notes = []
 
@@ -123,4 +153,16 @@ async def validate_request_node(state: IntakeState) -> dict:
     return {
         "messages": [AIMessage(content="Solicitud validada")],
         "validation_notes": notes,
+    }
+
+
+# nodo terminal de error: se alcanza cuando prepare o extract detectan un fallo
+# devuelve un normalized_request vacío para que el sistema receptor no rompa
+async def error_node(state: IntakeState) -> dict:
+    error_msg = state.get("error", "Error desconocido en el agente de intake")
+
+    return {
+        "messages": [AIMessage(content=f"No se ha podido procesar la entrada: {error_msg}")],
+        "normalized_request": {},
+        "validation_notes": [error_msg],
     }
