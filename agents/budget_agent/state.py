@@ -15,3 +15,4 @@ class BudgetState(TypedDict):
     customer_profile: dict  # perfil del cliente
     quote_result: dict  # resultado estructurado del presupuesto
     final_text: str  # texto final redactado del presupuesto
+    error: str | None  # error producido en el flujo, None si no hay error
