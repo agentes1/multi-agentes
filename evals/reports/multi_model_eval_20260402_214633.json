@@ -1,0 +1,269 @@
+{
+  "run_id": "20260402_214633",
+  "models": [
+    "qwen2.5",
+    "qwen3",
+    "llama3"
+  ],
+  "cases_total": 5,
+  "summary_by_model": {
+    "qwen2.5": {
+      "total_cases": 5,
+      "success_rate": 0.0,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 2518.19,
+      "latency_p95_ms": 2655.52,
+      "errors": {
+        "total": 5,
+        "rate": 1.0,
+        "types": {
+          "all connection attempts failed": 3,
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    },
+    "qwen3": {
+      "total_cases": 5,
+      "success_rate": 0.0,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 2475.18,
+      "latency_p95_ms": 2595.39,
+      "errors": {
+        "total": 5,
+        "rate": 1.0,
+        "types": {
+          "all connection attempts failed": 3,
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    },
+    "llama3": {
+      "total_cases": 5,
+      "success_rate": 0.0,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 2477.99,
+      "latency_p95_ms": 2532.49,
+      "errors": {
+        "total": 5,
+        "rate": 1.0,
+        "types": {
+          "all connection attempts failed": 3,
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    }
+  },
+  "winner": "qwen3",
+  "raw_results": [
+    {
+      "model": "qwen2.5",
+      "case_id": "email_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2655.52,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen2.5",
+      "case_id": "email_ok_002",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2518.19,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen2.5",
+      "case_id": "chat_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2623.1,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "qwen2.5",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 462.09,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen2.5",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 444.15,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3",
+      "case_id": "email_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2595.39,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3",
+      "case_id": "email_ok_002",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2475.18,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3",
+      "case_id": "chat_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2491.37,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "qwen3",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 437.51,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 506.54,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3",
+      "case_id": "email_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2532.49,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3",
+      "case_id": "email_ok_002",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2491.21,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3",
+      "case_id": "chat_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2477.99,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "llama3",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 427.87,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 467.63,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    }
+  ]
+}

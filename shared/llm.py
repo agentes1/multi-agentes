@@ -1,10 +1,19 @@
+import os
+
 from langchain_ollama import ChatOllama
 
 from shared.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE
 
 
-def get_llm() -> ChatOllama:
+def get_llm(model: str | None = None, temperature: int | None = None) -> ChatOllama:
+    selected_model = model or os.getenv("OLLAMA_MODEL_OVERRIDE") or OLLAMA_MODEL
+    selected_temperature = (
+        temperature
+        if temperature is not None
+        else int(os.getenv("OLLAMA_TEMPERATURE_OVERRIDE", str(OLLAMA_TEMPERATURE)))
+    )
+
     return ChatOllama(
-        model=OLLAMA_MODEL,
-        temperature=OLLAMA_TEMPERATURE,
+        model=selected_model,
+        temperature=selected_temperature,
     )

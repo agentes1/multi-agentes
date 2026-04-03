@@ -1,0 +1,5 @@
+{"case_id":"email_ok_001","thread_id":"eval-email-001","source_input":{"channel":"email","from":"cliente@acme.com","subject":"Presupuesto CRM","body":"Necesitamos CRM y facturacion"},"tags":["happy_path","email"]}
+{"case_id":"email_ok_002","thread_id":"eval-email-002","source_input":{"channel":"email","from":"compras@beta.com","subject":"Cotizacion ERP","body":"Somos Beta SA. Queremos CRM, dashboard y presupuestos"},"tags":["happy_path","email"]}
+{"case_id":"chat_ok_001","thread_id":"eval-chat-001","source_input":{"channel":"chat","user_name":"Laura","company_name":"Gamma SL","message":"Necesito CRM y presupuestos"},"tags":["happy_path","chat"]}
+{"case_id":"email_invalid_001","thread_id":"eval-invalid-001","source_input":{"channel":"email","from":"test@test.com","subject":"","body":""},"tags":["invalid_input"]}
+{"case_id":"chat_invalid_001","thread_id":"eval-invalid-002","source_input":{"channel":"chat","user_name":"Mario","company_name":"Delta","message":""},"tags":["invalid_input"]}

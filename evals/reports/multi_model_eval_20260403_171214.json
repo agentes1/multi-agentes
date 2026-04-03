@@ -1,0 +1,97 @@
+{
+  "run_id": "20260403_171214",
+  "models": [
+    "mistral"
+  ],
+  "cases_total": 5,
+  "summary_by_model": {
+    "mistral": {
+      "total_cases": 5,
+      "success_rate": 0.0,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 2412.77,
+      "latency_p95_ms": 2441.98,
+      "errors": {
+        "total": 5,
+        "rate": 1.0,
+        "types": {
+          "all connection attempts failed": 3,
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    }
+  },
+  "winner": "mistral",
+  "raw_results": [
+    {
+      "model": "mistral",
+      "case_id": "email_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2425.87,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "email_ok_002",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2441.98,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "chat_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 2412.77,
+      "error_type": "all connection attempts failed",
+      "error": "All connection attempts failed",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 391.81,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 386.33,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    }
+  ]
+}

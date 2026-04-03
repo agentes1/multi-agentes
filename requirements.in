@@ -1,0 +1,8 @@
+langgraph
+langchain-core
+langchain-ollama
+fastmcp
+fastapi
+uvicorn
+pydantic
+deepeval==3.9.5
