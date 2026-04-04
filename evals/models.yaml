@@ -1,0 +1,30 @@
+# Models to include in the benchmark
+# Add or comment out lines to change what gets tested.
+# Run: python -m evals.run_multi_model_eval
+#
+# To install a model locally: ollama pull <name>
+# Full list of available models: https://ollama.com/library
+
+models:
+  - mistral           # Mistral 7B (4.4 GB) — strong reasoning
+  - llama3.2          # Meta Llama 3.2 3B (2.0 GB) — lightweight
+  - qwen3:4b          # Qwen 3 4B (2.5 GB) — fast, good quality
+  - gemma3:4b         # Gemma 3 4B (3.3 GB) — Google
+
+  # --- More Mistral ---
+  # - mistral-nemo      # Mistral Nemo 12B (7.1 GB) — better, slower
+
+  # --- More Llama ---
+  # - llama3.1          # Meta Llama 3.1 8B (4.7 GB) — balanced
+  # - llama3.3          # Meta Llama 3.3 70B (43 GB) — very capable, needs GPU
+
+  # --- More Qwen ---
+  # - qwen2.5           # Qwen 2.5 7B (4.7 GB)
+  # - qwen3:8b          # Qwen 3 8B (5.2 GB) — upgrade from 4b
+
+  # --- Phi family (Microsoft) ---
+  # - phi4              # Phi-4 14B (9.1 GB) — strong at structured output
+  # - phi4-mini         # Phi-4 Mini 3.8B (2.5 GB) — lightweight
+
+  # --- More Gemma ---
+  # - gemma3:12b        # Gemma 3 12B (8.1 GB)

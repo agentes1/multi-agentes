@@ -1,0 +1,352 @@
+{
+  "run_id": "20260403_183055",
+  "models": [
+    "mistral",
+    "llama3.2",
+    "qwen3:4b",
+    "gemma3:4b"
+  ],
+  "cases_total": 5,
+  "summary_by_model": {
+    "mistral": {
+      "total_cases": 5,
+      "success_rate": 0.6,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 7462.99,
+      "latency_p95_ms": 11689.51,
+      "errors": {
+        "total": 2,
+        "rate": 0.4,
+        "types": {
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    },
+    "llama3.2": {
+      "total_cases": 5,
+      "success_rate": 0.6,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 7347.49,
+      "latency_p95_ms": 16519.83,
+      "errors": {
+        "total": 2,
+        "rate": 0.4,
+        "types": {
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    },
+    "qwen3:4b": {
+      "total_cases": 5,
+      "success_rate": 0.6,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 80045.43,
+      "latency_p95_ms": 173459.03,
+      "errors": {
+        "total": 2,
+        "rate": 0.4,
+        "types": {
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    },
+    "gemma3:4b": {
+      "total_cases": 5,
+      "success_rate": 0.0,
+      "contract_pass_rate": 1.0,
+      "deepeval_score_mean": 1.0,
+      "latency_p50_ms": 1453.48,
+      "latency_p95_ms": 11832.27,
+      "errors": {
+        "total": 5,
+        "rate": 1.0,
+        "types": {
+          "el llm no devolvió un json válido tras el intento de extracción.": 3,
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    }
+  },
+  "winner": "gemma3:4b",
+  "raw_results": [
+    {
+      "model": "mistral",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 11689.51,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 7462.99,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 7551.26,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 376.22,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "mistral",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 369.11,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3.2",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 16519.83,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3.2",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 11163.02,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3.2",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 7347.49,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "llama3.2",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 918.95,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3.2",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 897.59,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 132208.74,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 173459.03,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 80045.43,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 440.5,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 437.04,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "case_id": "email_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 11832.27,
+      "error_type": "el llm no devolvió un json válido tras el intento de extracción.",
+      "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "case_id": "email_ok_002",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 1634.98,
+      "error_type": "el llm no devolvió un json válido tras el intento de extracción.",
+      "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "case_id": "chat_ok_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 1453.48,
+      "error_type": "el llm no devolvió un json válido tras el intento de extracción.",
+      "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 397.91,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "gemma3:4b",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 387.97,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    }
+  ]
+}

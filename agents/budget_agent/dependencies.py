@@ -12,9 +12,9 @@ class BudgetDependencies:
     mcp_service: MCPBudgetService
 
 
-def build_dependencies() -> BudgetDependencies:
+def build_dependencies(model: str | None = None) -> BudgetDependencies:
     return BudgetDependencies(
-        llm=get_llm(),
+        llm=get_llm(model=model),
         memory_store=QuoteMemoryStore(),
         mcp_service=MCPBudgetService(),
     )

@@ -1,63 +1,70 @@
-# Multi-agentes — Presupuestación automática con LangGraph
+# Multi-agentes: guía completa desde cero
 
-Sistema multi-agente que recibe solicitudes de clientes (email, chat, etc), las interpreta y genera un presupuesto estructurado. Construido con LangGraph y LangChain, pensado para conectarse a Odoo.
+Proyecto Python con arquitectura multi-agente para transformar una solicitud de cliente (email/chat) en un presupuesto estructurado y un texto final listo para enviar.
 
----
+Incluye:
+- API REST con FastAPI.
+- Dos agentes en cadena (`intake_agent` y `budget_agent`) orquestados con LangGraph.
+- Integración MCP para pricing.
+- Tests clásicos (`pytest`) y evaluación de calidad con DeepEval (https://deepeval.com).
 
-## Arquitectura
+## 1) Requisitos previos
 
-Entrada (email / API / webhook)
-        ↓
-    api.py  →  pipeline.py
-                    ↓
-            intake_agent          → normalized_request
-                    ↓
-            budget_agent          → quote_result + final_text
-                    ↓
-        (próximo) OdooService     → sale.order en Odoo
+- Windows, macOS o Linux.
+- Python 3.11+.
+- Git.
+- (Opcional para flujo completo real) Ollama en ejecución con el modelo configurado (`llama3.1` por defecto).
 
-### Estructura de carpetas
+## 2) Instalación desde cero
 
-multi-agentes/
-├── agents/
-│   ├── intake_agent/       # estado, grafo, nodos, dependencias
-│   └── budget_agent/       # estado, grafo, nodos, dependencias
-├── mcp/
-│   └── mcp_servidor_precios.py   # servidor MCP con herramientas de pricing
-├── schemas/
-│   └── budget.py           # contratos de datos entre agentes (Pydantic)
-├── services/
-│   └── mcp_budget.py       # cliente MCP usado por el budget_agent
-├── shared/
-│   ├── catalog.py          # mapeo de requisitos a productos
-│   ├── llm.py              # factoría de modelos LLM
-│   ├── memory_store.py     # histórico de presupuestos por empresa
-│   └── config.py           # variables de entorno
-├── memory_data/
-│   └── quote_memory.json   # persistencia local del histórico
-├── tests/
-│   ├── test_intake_agent.py
-│   ├── test_budget_agent.py
-│   └── test_api.py
-├── api.py                  # endpoint REST (FastAPI)
-├── pipeline.py             # orquestador: conecta los dos agentes
-└── pyproject.toml
+Desde la carpeta donde quieras trabajar:
 
----
+```bash
+git clone https://github.com/agentes1/multi-agentes.git
+cd multi-agentes
+```
 
-## Uso
+Crear y activar entorno virtual.
 
-### Arrancar la API
+Windows PowerShell:
 
-'''bash
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Instalar dependencias:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+## 3) Arrancar la API
+
+```bash
 python api.py
-'''
+```
 
-Documentación interactiva disponible en `http://localhost:8000/docs`.
+API docs: http://localhost:8000/docs
 
-### Llamar al endpoint
+Healthcheck:
 
-'''bash
+```bash
+curl http://localhost:8000/health
+```
+
+Respuesta esperada:
+
+```json
+{"status":"ok"}
+```
+
+## 4) Usar el endpoint principal
+
+### Ejemplo de request
+
+```bash
 curl -X POST http://localhost:8000/process \
   -H "Content-Type: application/json" \
   -d '{
@@ -65,76 +72,126 @@ curl -X POST http://localhost:8000/process \
       "channel": "email",
       "from": "cliente@acme.com",
       "subject": "Solicitud presupuesto ERP",
-      "body": "Somos Acme SL, necesitamos CRM y módulo de facturación con Odoo."
+      "body": "Somos Acme SL, necesitamos CRM y facturación."
     }
   }'
-'''
+```
 
-### Respuesta esperada
+### Ejemplo de respuesta
 
-'''json
+```json
 {
   "ok": true,
-  "thread_id": "uuid",
+  "thread_id": "5be2f8f9-3f9f-4d0f-8cb3-93fc5f51c5dc",
+  "stage": null,
+  "error": null,
+  "validation_notes": [],
   "normalized_request": {
     "company_name": "Acme SL",
     "requirements": ["crm", "presupuestos"],
     "urgency": "media"
   },
   "quote_result": {
-    "total": 4500.0,
+    "company_name": "Acme SL",
+    "subtotal": 3000.0,
+    "discount": 300.0,
+    "total": 2700.0,
     "currency": "EUR"
   },
   "final_text": "Presupuesto preliminar para Acme SL..."
 }
-'''
-
-### Códigos de respuesta
-
-| Código | Significado |
-|---|---|
-| `200` | Presupuesto generado correctamente |
-| `400` | Error de negocio (email vacío, sin productos reconocibles, MCP caído) |
-| `422` | Error de validación (body del request mal formado) |
-
----
-
-## Tests
-
-'''bash
-pytest tests/
-'''
-
-Cada agente tiene sus propios tests unitarios con mocks. Los tests de la API usan `httpx` con la app montada en memoria, sin necesidad de levantar el servidor.
-
----
-
-## Flujo de datos interno
-
-```
-source_input (dict)
-    → prepare_input_node     # normaliza canal (email/chat/etc)
-    → extract_request_node   # LLM extrae JSON estructurado
-    → validate_request_node  # comprueba campos mínimos (no bloqueante)
-    → normalized_request
-
-normalized_request (dict)
-    → prepare_budget_node    # mapea requisitos a productos del catálogo
-    → retrieve_memory_node   # recupera histórico del cliente
-    → pricing_node           # llama al MCP para calcular precios
-    → render_quote_node      # LLM redacta el presupuesto final
-    → persist_memory_node    # guarda en histórico
-    → quote_result + final_text
 ```
 
-Los errores en cualquier nodo redirigen a un `error_node` que cierra el grafo limpiamente sin lanzar excepciones.
+## 5) Ejecutar tests clásicos
 
----
+```bash
+python -m pytest tests -q
+```
 
-## Próximos pasos
+Estos tests validan:
+- Flujo de `intake_agent`.
+- Errores controlados de `budget_agent`.
+- Endpoint API.
 
-- Conectar `OdooService` al pipeline para crear `sale.order` automáticamente
-- Reemplazar datos mock del MCP por llamadas reales a Odoo
-- Añadir listener de emails
-- Implementar resto de agentes
-- Modelo LLMs estudiados
+## 6) DeepEval (oficial de deepeval.com)
+
+Este proyecto usa el paquete oficial `deepeval` y una métrica determinista local (`PipelineContractMetric`) para evitar dependencia de API keys externas.
+
+Archivo de integración: [shared/deepeval_eval.py](shared/deepeval_eval.py)
+
+Qué valida esta métrica:
+- Si `ok=true`:
+  - estructura básica de `quote_result`;
+  - coherencia numérica (`subtotal - discount == total`);
+  - que exista `final_text`.
+- Si `ok=false`:
+  - que exista `error`.
+
+### Ejecutar solo evaluación DeepEval
+
+```bash
+python -m pytest tests/test_deepeval_eval.py -q
+```
+
+### Caso de ejemplo DeepEval
+
+Ver [tests/test_deepeval_eval.py](tests/test_deepeval_eval.py), donde:
+- se crea un `LLMTestCase` desde input + resultado de pipeline;
+- se aplica `PipelineContractMetric`;
+- se ejecuta `assert_test(...)`.
+
+## 7) Estructura de alto nivel
+
+```text
+Entrada (email/chat)
+  -> api.py
+  -> pipeline.py
+       -> intake_agent (normaliza solicitud)
+       -> budget_agent (genera quote_result + final_text)
+```
+
+## 8) Solución de problemas
+
+1. `ModuleNotFoundError` al ejecutar tests
+   - Asegura entorno activo y reinstala dependencias:
+   - `python -m pip install -r requirements.txt`
+
+2. Error de conexión de modelo local (Ollama)
+   - Verifica que Ollama esté levantado y que exista el modelo configurado.
+
+3. Error 400 en `/process`
+   - Es un error de negocio (ejemplo: entrada vacía o fallo MCP). Revisa `detail.error` en la respuesta.
+
+## 9) Comandos rápidos
+
+```bash
+# instalar
+python -m pip install -r requirements.txt
+
+# arrancar API
+python api.py
+
+# tests clásicos
+python -m pytest tests -q
+
+# evals DeepEval
+python -m pytest tests/test_deepeval_eval.py -q
+
+# benchmark multi-modelo (ejemplo)
+python -m evals.run_multi_model_eval --cases evals/benchmark_cases.jsonl --models qwen2.5 qwen3 llama3 --out-dir evals/reports
+```
+
+## 10) Benchmark de modelos (Qwen/Llama)
+
+Para comparar modelos en el pipeline real con métricas de calidad + latencia:
+
+```bash
+python -m evals.run_multi_model_eval --cases evals/benchmark_cases.jsonl --models qwen2.5 qwen3 llama3 --out-dir evals/reports
+```
+
+Se generan dos artefactos:
+- JSON detallado con resultados por caso y agregados por modelo.
+- Markdown con tabla comparativa y ganador.
+
+Guía completa de metodología e interpretación:
+- [docs/model_evaluation_guide.md](docs/model_evaluation_guide.md)

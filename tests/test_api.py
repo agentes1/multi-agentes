@@ -1,8 +1,86 @@
-# tests/test_api.py
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from api import app
+import pipeline
+from agents.budget_agent.dependencies import BudgetDependencies
+from agents.intake_agent.dependencies import IntakeDependencies
+
+
+class MockLLMValid:
+    async def ainvoke(self, messages):
+        class Response:
+            content = """{
+                \"company_name\": \"Acme SL\",
+                \"project_summary\": \"Necesitan CRM y facturación\",
+                \"requirements\": [\"crm\", \"presupuestos\"],
+                \"urgency\": \"alta\",
+                \"missing_information\": []
+            }"""
+
+        return Response()
+
+
+class MockMemoryStore:
+    def get_last_quote_memory(self, company_name):
+        class Memory:
+            quote_count = 0
+            last_quote_total = 0.0
+
+            def model_dump(self):
+                return {"quote_count": 0, "last_quote_total": 0.0}
+
+        return Memory()
+
+    def append_quote(self, item):
+        pass
+
+    def now_iso(self):
+        return "2025-01-01T00:00:00"
+
+
+class MockMCPService:
+    async def get_budget_context(self, company_name, product_codes):
+        return {
+            "customer_profile": {"name": company_name, "discount": 0},
+            "quote": {
+                "company_name": company_name,
+                "lines": [
+                    {"code": "crm_base", "name": "CRM base", "unit_price": 1000.0, "quantity": 1},
+                    {
+                        "code": "presupuestos",
+                        "name": "Módulo de presupuestos",
+                        "unit_price": 2000.0,
+                        "quantity": 1,
+                    },
+                ],
+                "subtotal": 3000.0,
+                "discount_amount": 300.0,
+                "total": 2700.0,
+                "currency": "EUR",
+                "warnings": [],
+            },
+        }
+
+
+def _build_intake_deps(model: str | None = None) -> IntakeDependencies:
+    _ = model
+    return IntakeDependencies(llm=MockLLMValid())
+
+
+def _build_budget_deps(model: str | None = None) -> BudgetDependencies:
+    _ = model
+    return BudgetDependencies(
+        llm=MockLLMValid(),
+        memory_store=MockMemoryStore(),
+        mcp_service=MockMCPService(),
+    )
+
+
+@pytest.fixture(autouse=True)
+def patch_pipeline_dependencies(monkeypatch):
+    monkeypatch.setattr(pipeline, "build_intake_deps", _build_intake_deps)
+    monkeypatch.setattr(pipeline, "build_budget_deps", _build_budget_deps)
 
 
 @pytest.mark.asyncio
@@ -40,8 +118,4 @@ async def test_process_email_vacio_devuelve_422():
                 }
             },
         )
-    # debug temporal: ver qué devuelve realmente la API
-    print("\nSTATUS:", response.status_code)
-    print("BODY:", response.json())
-
     assert response.status_code == 400

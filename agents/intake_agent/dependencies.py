@@ -8,7 +8,7 @@ class IntakeDependencies:
     llm: object
 
 
-def build_dependencies() -> IntakeDependencies:
+def build_dependencies(model: str | None = None) -> IntakeDependencies:
     return IntakeDependencies(
-        llm=get_llm(),
+        llm=get_llm(model=model),
     )

@@ -259,6 +259,248 @@
       },
       "final_text": "",
       "timestamp": "2026-03-25T18:00:40.538393+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "",
+        "requirements": [
+          "crm"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgency"
+        ]
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 4,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Título: Presupuesto Preliminar para CRM Base  \n\nResumen del proyecto: Solicitud de implementación de un CRM básico para gestión de clientes  \n\nMódulos incluidos: Módulo CRM Base  \n\nSubtotal: 1.200,00 EUR  \nDescuento: 0,00 EUR  \nTotal final: 1.200,00 EUR  \n\nNota final: Este presupuesto es preliminar y sujeto a confirmación final.  \n\nHistórico previo: Se ha considerado el histórico previo de 3 presupuestos.",
+      "timestamp": "2026-04-03T17:32:18.769501+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "",
+        "requirements": [
+          "crm"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgency"
+        ]
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 5,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto Preliminar para CRM Base\n\nResumen del proyecto: Implementación de un CRM básico para gestionar clientes y contactos.\n\nMódulos incluidos:\n- CRM Base\n\nSubtotal: 1200,00 EUR\nDescuento: 0,00 EUR\nTotal final: 1200,00 EUR\n\nNota final: Este presupuesto es preliminar y sujeto a confirmación final tras revisión detallada.\n\nSe ha considerado el presupuesto previo del 03/04/2026.",
+      "timestamp": "2026-04-03T18:00:00.355300+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "CRM y facturación para el cliente@acme.com",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "media",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 6,
+        "based_on_previous_quote": true
+      },
+      "final_text": " Presupuesto Profesional\n------------------------\n\n### Resumen del Proyecto: CRM y facturación para el cliente@acme.com\n\n### Módulos Incluidos:\n- CRM Base\n- Facturación\n\n### Subtotal: €1200,00\n### Descuento: 0%\n### Total Final: €1200,00\n\nNota final: Este presupuesto es preliminar.\n\nEn caso de que exista un historial previo, se ha tenido en cuenta para la elaboración del mismo.",
+      "timestamp": "2026-04-03T18:23:20.486372+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "Presupuesto CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturación"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 7,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto Preliminar para CRM y Facturación**\n\n**Resumen del Proyecto:**\nEl presupuesto incluye la implementación de un sistema de CRM (Customer Relationship Management) y facturación para su empresa.\n\n**Módulos Incluidos:**\n\n* CRM Base\n* Facturación\n\n**Detalles del Presupuesto:**\n\n| Línea | Descripción | Precio Unitario | Cantidad | Linea Total |\n| --- | --- | --- | --- | --- |\n| 1 | CRM Base | 1200.00 EUR | 1 | 1200.00 EUR |\n\n**Resumen del Presupuesto:**\n\n* Subtotal: 1200.00 EUR\n* Descuento: 0.00 EUR (sin descuento)\n* Total Final: 1200.00 EUR\n\n**Nota Final:**\nEl presupuesto presentado es preliminar y se basa en la información proporcionada por su empresa. Se ha tenido en cuenta el histórico previo de su empresa, que incluye la implementación de un sistema de CRM Base en el pasado.\n\nEsperamos que este presupuesto sea de su interés y nos permita trabajar juntos para encontrar la solución adecuada para sus necesidades.",
+      "timestamp": "2026-04-03T18:23:52.766186+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "Cotización de ERP para Beta SA",
+        "requirements": [
+          "crm",
+          "dashboard",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "dashboard",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 8,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto Preliminar para Beta SA**\n\n**Resumen del Proyecto:**\nLa empresa Beta SA solicita una cotización para la implementación de un sistema ERP que incluya módulos de CRM, dashboard y presupuestos.\n\n**Módulos Incluidos:**\n\n* CRM Base\n* Dashboard Comercial\n* Generación de Presupuestos con IA (Quotation AI)\n\n**Detalles del Presupuesto:**\n\n| Producto | Descripción | Precio Unitario | Cantidad | Linea Total |\n| --- | --- | --- | --- | --- |\n| crm_base | CRM Base | 1200.00 EUR | 1 | 1200.00 EUR |\n| dashboard | Dashboard Comercial | 900.00 EUR | 1 | 900.00 EUR |\n| quotation_ai | Generación de Presupuestos con IA | 2200.00 EUR | 1 | 2200.00 EUR |\n\n**Resumen del Presupuesto:**\n\n* Subtotal: 4300.00 EUR\n* Descuento: 0.00 EUR (sin descuento)\n* Total Final: 4300.00 EUR\n\n**Nota Final:**\nEl presente presupuesto es preliminar y se basa en la información proporcionada por Beta SA. Se recomienda verificar los detalles del proyecto antes de tomar una decisión final.\n\n**Historico Previo:**\nSe ha tenido en cuenta el historial previo de cotizaciones para esta empresa, que incluye un total de 7 cotizaciones anteriores con un total de 1200.00 EUR.",
+      "timestamp": "2026-04-03T18:24:03.928037+00:00"
+    },
+    {
+      "company_name": "Desconocido",
+      "normalized_request": {
+        "company_name": "Desconocido",
+        "project_summary": "",
+        "requirements": [
+          "crm"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgency"
+        ]
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Desconocido",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 9,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Título:** Presupuesto Preliminar para CRM Base  \n\n**Resumen del proyecto:** Solicitud de CRM básico sin detalles específicos  \n\n**Módulos incluidos:** CRM Base  \n\n**Subtotal:** 1.200 €  \n**Descuento:** 0 €  \n**Total final:** 1.200 €  \n\n**Nota final:** Este presupuesto es preliminar y sujeto a revisión. Se ha considerado el histórico previo del cliente (8 presupuestos).",
+      "timestamp": "2026-04-03T18:26:25.302275+00:00"
     }
   ],
   "Acme": [
@@ -297,6 +539,894 @@
       },
       "final_text": "",
       "timestamp": "2026-03-25T18:03:56.047968+00:00"
+    },
+    {
+      "company_name": "Acme",
+      "normalized_request": {
+        "company_name": "Acme",
+        "project_summary": "Solicitud de presupuesto para implementación de CRM y facturación",
+        "requirements": [
+          "crm"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgencia"
+        ]
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 120.0,
+        "total": 1080.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto para implementación de CRM y facturación\n\nResumen del proyecto: Implementación de un sistema CRM y facturación para Acme\n\nMódulos incluidos:\n• CRM Base\n\nSubtotal: 1.200,00 EUR\nDescuento: 120,00 EUR (10%)\nTotal final: 1.080,00 EUR\n\nNota final: Este presupuesto es preliminar y sujeto a ajustes según las necesidades específicas del cliente.\n\nSe ha considerado el presupuesto previo de 1.980,00 EUR para optimizar los costos.",
+      "timestamp": "2026-04-03T17:40:02.870887+00:00"
+    },
+    {
+      "company_name": "Acme",
+      "normalized_request": {
+        "company_name": "Acme",
+        "project_summary": "Solicitud de presupuesto para implementación de CRM y facturación",
+        "requirements": [
+          "crm"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgencia"
+        ]
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 120.0,
+        "total": 1080.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto profesional para implementación de CRM y facturación  \n\n**Resumen del proyecto**: Implementación de sistema CRM y facturación para Acme  \n\n**Módulos incluidos**:  \n• CRM Base  \n\n**Subtotal**: 1.200,00 EUR  \n**Descuento**: 120,00 EUR (10%)  \n**Total final**: 1.080,00 EUR  \n\n**Nota final**: Este presupuesto es preliminar y sujeto a confirmación final.  \n\n**Histórico previo**: Se ha considerado el presupuesto previo de 1.080,00 EUR (03/04/2026).",
+      "timestamp": "2026-04-03T17:45:02.468330+00:00"
+    }
+  ],
+  "Acme SL": [
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementar CRM y módulo de facturación con Odoo",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "alta",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y módulo de facturación con Odoo**\n\n**Resumen del proyecto:**\nImplementar CRM y módulo de facturación con Odoo.\n\n**Módulos incluidos:**\n\n* CRM Base\n* Módulo de Facturación\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede variar dependiendo de las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el historial previo de la empresa, aunque no se han encontrado anteriores solicitudes o presupuestos relacionados.",
+      "timestamp": "2026-03-28T13:14:55.070764+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo la última cotización realizada el 28/03/2026 por un importe total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:16:37.482059+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo la última cotización realizada el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:20:47.957773+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 4,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, incluyendo su última cotización realizada el 28 de marzo de 2026 por un importe total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:21:49.032572+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 5,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:22:38.212371+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 6,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:23:15.771308+00:00"
+    },
+    {
+      "company_name": "Acme SL",
+      "normalized_request": {
+        "company_name": "Acme SL",
+        "project_summary": "Implementación de CRM y facturación",
+        "requirements": [
+          "crm",
+          "facturacion"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base"
+      ],
+      "quote_result": {
+        "company_name": "Acme SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          }
+        ],
+        "subtotal": 1200.0,
+        "discount": 0.0,
+        "total": 1200.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 7,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para la implementación de CRM y facturación**\n\n**Resumen del proyecto:**\nImplementación de CRM y facturación para Acme SL.\n\n**Módulos incluidos:**\n\n* CRM Base\n\n**Subtotal:** 1200.00 EUR\n**Descuento:** 0.00%\n**Total final:** 1200.00 EUR\n\n**Nota final:** Este presupuesto es preliminar y puede ser modificado según las necesidades específicas de la empresa.\n\n**Nota adicional:** Se ha tenido en cuenta el histórico previo de Acme SL, con un último presupuesto emitido el 28/03/2026 por un total de 1200.00 EUR.",
+      "timestamp": "2026-03-28T13:24:17.579983+00:00"
+    }
+  ],
+  "Beta SA": [
+    {
+      "company_name": "Beta SA",
+      "normalized_request": {
+        "company_name": "Beta SA",
+        "project_summary": "Solicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA",
+        "requirements": [
+          "crm",
+          "presupuestos",
+          "dashboard"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgencia"
+        ]
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai",
+        "dashboard"
+      ],
+      "quote_result": {
+        "company_name": "Beta SA",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "**Presupuesto preliminar para implementación de CRM, dashboard y presupuestos**  \n\n**Resumen del proyecto**  \nSolicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA  \n\n**Módulos incluidos**  \n- CRM Base: 1.200 EUR  \n- Generación de presupuestos con IA: 2.200 EUR  \n- Dashboard comercial: 900 EUR  \n\n**Subtotal**: 4.300 EUR  \n**Descuento**: 0 EUR  \n**Total final**: 4.300 EUR  \n\n**Nota final**: Este presupuesto es preliminar y está sujeto a ajustes según las necesidades específicas del cliente.  \n\n**Historico previo**: No se ha considerado histórico previo.",
+      "timestamp": "2026-04-03T17:34:32.194776+00:00"
+    },
+    {
+      "company_name": "Beta SA",
+      "normalized_request": {
+        "company_name": "Beta SA",
+        "project_summary": "Solicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA",
+        "requirements": [
+          "crm",
+          "dashboard",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "dashboard",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Beta SA",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto para implementación de CRM, dashboard y presupuestos  \n\n**Resumen del proyecto**: Solicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA.  \n\n**Módulos incluidos**:  \n- CRM Base: 1.200 EUR  \n- Dashboard comercial: 900 EUR  \n- Generación de presupuestos con IA: 2.200 EUR  \n\n**Subtotal**: 4.300 EUR  \n**Descuento**: 0 EUR  \n**Total final**: 4.300 EUR  \n\n**Nota final**: Este presupuesto es preliminar y sujeto a ajustes según las necesidades específicas del proyecto.  \n\nSe ha considerado el presupuesto anterior de 4.300 EUR (3 de abril de 2026) para garantizar coherencia en los servicios solicitados.",
+      "timestamp": "2026-04-03T17:47:06.438452+00:00"
+    },
+    {
+      "company_name": "Beta SA",
+      "normalized_request": {
+        "company_name": "Beta SA",
+        "project_summary": "Solicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA",
+        "requirements": [
+          "crm",
+          "dashboard",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "dashboard",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Beta SA",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Título: Presupuesto preliminar para implementación de CRM, dashboard y presupuestos\n\nResumen del proyecto: Solicitud de implementación de CRM, dashboard y presupuestos para Beta SA.\n\nMódulos incluidos:\n- CRM Base: 1200,00 EUR\n- Dashboard comercial: 900,00 EUR\n- Generación de presupuestos con IA: 2200,00 EUR\n\nSubtotal: 4300,00 EUR\nDescuento: 0,00 EUR\nTotal final: 4300,00 EUR\n\nNota final: Este presupuesto es preliminar y sujeto a ajustes según las necesidades específicas del cliente.\n\nHistorial previo: Se ha considerado el último presupuesto emitido el 03/04/2026 (4300,00 EUR) para ajustar los módulos solicitados.",
+      "timestamp": "2026-04-03T18:02:41.818987+00:00"
+    },
+    {
+      "company_name": "Beta SA",
+      "normalized_request": {
+        "company_name": "Beta SA",
+        "project_summary": "CRM, Dashboard and Presupuestos required for Beta SA",
+        "requirements": [
+          "crm",
+          "dashboard",
+          "presupuestos"
+        ],
+        "urgency": "media",
+        "missing_information": [
+          "emails",
+          "odoo"
+        ]
+      },
+      "selected_products": [
+        "crm_base",
+        "dashboard",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Beta SA",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 4,
+        "based_on_previous_quote": true
+      },
+      "final_text": " Presupuesto Profesional para Beta SA\n======================================\n\nResumen del Proyecto: CRM, Dashboard y Presupuestos requeridos para Beta SA\n--------------------------------------------------------------------------\n\nMódulos Incluidos:\n- CRM Base (1200.0 €)\n- Dashboard Comercial (900.0 €)\n- Generación de presupuestos con IA (2200.0 €)\n\nSubtotal: 4300.0 €\n-------------------\n\nDescuento: 0%\n------------\n\nTotal Final: 4300.0 €\n----------------------\n\nNota Final: Este presupuesto es preliminar y puede sufrir cambios en función de la información adicional que se proporcione.\n\nSe ha tenido en cuenta el historial previo del cliente.",
+      "timestamp": "2026-04-03T18:23:27.949172+00:00"
+    },
+    {
+      "company_name": "Beta SA",
+      "normalized_request": {
+        "company_name": "Beta SA",
+        "project_summary": "Solicitud de implementación de CRM, dashboard y presupuestos para la empresa Beta SA",
+        "requirements": [
+          "crm",
+          "presupuestos",
+          "dashboard"
+        ],
+        "urgency": "baja",
+        "missing_information": [
+          "urgencia"
+        ]
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai",
+        "dashboard"
+      ],
+      "quote_result": {
+        "company_name": "Beta SA",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          },
+          {
+            "product_code": "dashboard",
+            "description": "Dashboard comercial",
+            "unit_price": 900.0,
+            "quantity": 1,
+            "line_total": 900.0
+          }
+        ],
+        "subtotal": 4300.0,
+        "discount": 0.0,
+        "total": 4300.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 5,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto\n\n- CRM Base: 1.200,00 EUR\n- Generación de presupuestos con IA: 2.200,00 EUR\n- Dashboard comercial: 900,00 EUR\n\nTotal: 4.300,00 EUR",
+      "timestamp": "2026-04-03T18:29:18.760783+00:00"
+    }
+  ],
+  "Gamma SL": [
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "Solicitud de implementación de CRM y generación de presupuestos",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 1,
+        "based_on_previous_quote": false
+      },
+      "final_text": "Presupuesto para implementación de CRM y generación de presupuestos\n\nResumen del proyecto: Solicitud de implementación de CRM y generación de presupuestos\n\nMódulos incluidos:\n- CRM Base\n- Generación de presupuestos con IA\n\nSubtotal: 3.400 EUR\nDescuento: 0 EUR\nTotal final: 3.400 EUR\n\nNota final: Este presupuesto es preliminar y sujeto a confirmación final.",
+      "timestamp": "2026-04-03T17:36:04.161018+00:00"
+    },
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "Solicitud de implementación de CRM y generación de presupuestos",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 2,
+        "based_on_previous_quote": true
+      },
+      "final_text": "Presupuesto profesional para implementación de CRM y generación de presupuestos\n\nResumen del proyecto: Solicitud de implementación de CRM y generación de presupuestos\n\nMódulos incluidos:\n- CRM Base: 1200 EUR\n- Generación de presupuestos con IA: 2200 EUR\n\nSubtotal: 3400 EUR\nDescuento: 0 EUR\nTotal final: 3400 EUR\n\nNota final: Este presupuesto es preliminar y sujeto a ajustes según las necesidades específicas del cliente.\n\nSe ha considerado el presupuesto previo del 3 de abril de 2026.",
+      "timestamp": "2026-04-03T17:48:34.162305+00:00"
+    },
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "Need CRM and budgets",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 3,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para Gamma SL - CRM y Presupuestos**  \n\n**Resumen del proyecto**: Solicitud de implementación de CRM y generación de presupuestos.  \n\n**Módulos incluidos**:  \n- CRM Base  \n- Generación de presupuestos con IA  \n\n**Subtotal**: 3.400,00 EUR  \n**Descuento**: 0,00 EUR  \n**Total final**: 3.400,00 EUR  \n\n**Nota final**: Este presupuesto es preliminar y sujeto a confirmación final.  \n\n*Se ha considerado el historial previo (2 presupuestos).*",
+      "timestamp": "2026-04-03T18:03:59.691738+00:00"
+    },
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "CRM and budgeting solution required",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "media",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 4,
+        "based_on_previous_quote": true
+      },
+      "final_text": " Presupuesto Profesional para Gamma SL\n=========================================\n\nResumen del Proyecto: Solución CRM y presupuestos requerida\n-----------------------------------------------------------\n\nMódulos Incluidos:\n- CRM Base (1 unidad, precio unitario: 1200.0 EUR)\n- Generación de presupuestos con IA (1 unidad, precio unitario: 2200.0 EUR)\n\nSubtotal: 3400.0 EUR\n----------------------\n\nDescuento: 0%\n--------------\n\nTotal Final: 3400.0 EUR\n------------------------\n\nNota Final: Este presupuesto es preliminar y puede sufrir cambios en el futuro.\n\nHistórico previo considerado: Se ha tenido en cuenta un histórico de tres cotizaciones anteriores con Gamma SL.\n\nAtentamente, [Tu Nombre] - Agente de Preventa",
+      "timestamp": "2026-04-03T18:23:35.500648+00:00"
+    },
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "Implementación de CRM y presupuestos",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 5,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto Preliminar para la Implementación de CRM y Presupuestos**\n\n**Título:** Implementación de CRM y Presupuestos para Gamma SL\n\n**Resumen del Proyecto:**\nLa empresa Gamma SL solicita una implementación de un sistema de gestión de relaciones con clientes (CRM) y un módulo de presupuestos automatizado. El objetivo es mejorar la eficiencia en la generación de presupuestos y aumentar la precisión en la gestión de proyectos.\n\n**Módulos Incluidos:**\n\n* CRM Base\n* Generación de Presupuestos con IA (Quotation AI)\n\n**Detalles del Presupuesto:**\n\n| Producto | Descripción | Precio Unitario | Cantidad | Total |\n| --- | --- | --- | --- | --- |\n| crm_base | CRM Base | 1200.00 EUR | 1 | 1200.00 |\n| quotation_ai | Generación de Presupuestos con IA | 2200.00 EUR | 1 | 2200.00 |\n\n**Subtotal:** 3400.00 EUR\n\n**Descuento:** 0.00% (sin descuento)\n\n**Total Final:** 3400.00 EUR\n\n**Nota Final:**\nEl presente presupuesto es preliminar y se basa en la información proporcionada por la empresa Gamma SL. Se ha tenido en cuenta el histórico previo de la empresa, que incluye la implementación de CRM Base y Quotation AI en el pasado.\n\nEsperamos que este presupuesto sea de su interés y nos permita trabajar juntos para implementar un sistema de gestión de relaciones con clientes eficiente y efectivo.",
+      "timestamp": "2026-04-03T18:24:11.272213+00:00"
+    },
+    {
+      "company_name": "Gamma SL",
+      "normalized_request": {
+        "company_name": "Gamma SL",
+        "project_summary": "Need CRM and budgets",
+        "requirements": [
+          "crm",
+          "presupuestos"
+        ],
+        "urgency": "baja",
+        "missing_information": []
+      },
+      "selected_products": [
+        "crm_base",
+        "quotation_ai"
+      ],
+      "quote_result": {
+        "company_name": "Gamma SL",
+        "lines": [
+          {
+            "product_code": "crm_base",
+            "description": "CRM Base",
+            "unit_price": 1200.0,
+            "quantity": 1,
+            "line_total": 1200.0
+          },
+          {
+            "product_code": "quotation_ai",
+            "description": "Generación de presupuestos con IA",
+            "unit_price": 2200.0,
+            "quantity": 1,
+            "line_total": 2200.0
+          }
+        ],
+        "subtotal": 3400.0,
+        "discount": 0.0,
+        "total": 3400.0,
+        "currency": "EUR",
+        "warnings": [],
+        "version": 6,
+        "based_on_previous_quote": true
+      },
+      "final_text": "**Presupuesto para CRM y presupuestos**  \n\n**Resumen del proyecto**: Necesidad de implementar un CRM y generar presupuestos.  \n\n**Módulos incluidos**:  \n- CRM Base: 1.200 EUR  \n- Generación de presupuestos con IA: 2.200 EUR  \n\n**Subtotal**: 3.400 EUR  \n**Descuento**: 0 EUR  \n**Total final**: 3.400 EUR  \n\nSe ha considerado el histórico previo (5 presupuestos).  \n\n**Nota final**: Este presupuesto es preliminar y sujeto a confirmación final.",
+      "timestamp": "2026-04-03T18:30:38.806649+00:00"
     }
   ],
   "Acme SL": [

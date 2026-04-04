@@ -1,0 +1,96 @@
+{
+  "run_id": "20260403_173605",
+  "models": [
+    "qwen3:4b"
+  ],
+  "cases_total": 5,
+  "summary_by_model": {
+    "qwen3:4b": {
+      "total_cases": 5,
+      "success_rate": 0.6,
+      "contract_pass_rate": 0.4,
+      "deepeval_score_mean": 0.7999999999999999,
+      "latency_p50_ms": 91966.64,
+      "latency_p95_ms": 146923.41,
+      "errors": {
+        "total": 2,
+        "rate": 0.4,
+        "types": {
+          "email recibido sin asunto ni cuerpo. no se puede procesar.": 1,
+          "mensaje de chat recibido vacío. no se puede procesar.": 1
+        }
+      }
+    }
+  },
+  "winner": "qwen3:4b",
+  "raw_results": [
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "contract_success": false,
+      "deepeval_score": 0.6666666666666666,
+      "latency_ms": 146923.41,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "contract_success": false,
+      "deepeval_score": 0.6666666666666666,
+      "latency_ms": 133425.15,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "contract_success": false,
+      "deepeval_score": 0.6666666666666666,
+      "latency_ms": 91966.64,
+      "error_type": "",
+      "error": "",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "email_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 682.42,
+      "error_type": "email recibido sin asunto ni cuerpo. no se puede procesar.",
+      "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3:4b",
+      "case_id": "chat_invalid_001",
+      "ok": false,
+      "contract_success": true,
+      "deepeval_score": 1.0,
+      "latency_ms": 688.81,
+      "error_type": "mensaje de chat recibido vacío. no se puede procesar.",
+      "error": "Mensaje de chat recibido vacío. No se puede procesar.",
+      "tags": [
+        "invalid_input"
+      ]
+    }
+  ]
+}

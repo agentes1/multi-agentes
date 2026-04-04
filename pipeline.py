@@ -7,11 +7,11 @@ from agents.intake_agent.dependencies import build_dependencies as build_intake_
 from agents.intake_agent.graph import build_intake_graph
 
 
-async def run_pipeline(source_input: dict, thread_id: str) -> dict:
+async def run_pipeline(source_input: dict, thread_id: str | None, model: str | None = None) -> dict:
     # paso 1: intake_agent transforma la entrada cruda en solicitud normalizada
     intake_result = await build_intake_graph().ainvoke(
         {"source_input": source_input},
-        config={"configurable": {"deps": build_intake_deps()}},
+        config={"configurable": {"deps": build_intake_deps(model=model)}},
     )
 
     if intake_result.get("error"):
@@ -22,7 +22,7 @@ async def run_pipeline(source_input: dict, thread_id: str) -> dict:
         {"normalized_request": intake_result["normalized_request"]},
         config={
             "configurable": {
-                "deps": build_budget_deps(),
+                "deps": build_budget_deps(model=model),
                 "thread_id": thread_id,  # requerido por InMemorySaver
             }
         },
