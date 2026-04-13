@@ -77,7 +77,8 @@ if __name__ == '__main__':
 
     try:
         odoo = OdooAPIWrapper(BASE_URL, username, password, db)
-        print("Successfully connected to Odoo")
+
+        print("\n" + "="*20 + "\nTesting Products\n" + "="*20)
 
         # 1. Create a contact
         test_contact_data = {
