@@ -28,10 +28,10 @@ class OdooAPIWrapper:
         except Exception as e:
             print("Could not list DBs:", e)
 
-
     def get_all(self, tablename, limit=100):
         return self._models.execute_kw(self._db, self._uid, self._password, tablename, 'search_read', [], {'limit': limit})
 
+    # Product (product.product) CRUD
     def get_products(self):
         domain = [('active', '=', True)]
         return self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'search_read', [domain], {'limit': 10})
@@ -67,20 +67,47 @@ class OdooAPIWrapper:
     def delete_contact(self, contact_id):
         return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'unlink', [[contact_id]])
 
-
 if __name__ == '__main__':
     BASE_URL = 'http://localhost:8069/xmlrpc/2'
     db = 'odoo'
     username = 'senen.marques@live.u-tad.com'
     password = 'admin'
-    db_password = 'admin'
 
-    odoo = OdooAPIWrapper(BASE_URL, username, password, db)
-    # products = odoo.get_all('product.product')
-    # [print(p['display_name']) for p in products]
+    try:
+        odoo = OdooAPIWrapper(BASE_URL, username, password, db)
+        print("Successfully connected to Odoo")
 
-    # res = odoo.get_products()
-    res = odoo.get_product(15)
-    if res:
-        print(res.keys())
+        # 1. Create a contact
+        test_contact_data = {
+            'name': 'Test Gemini Contact',
+            'email': 'gemini@test.com',
+            'is_company': False
+        }
+        contact_id = odoo.create_contact(test_contact_data)
+        print(f"Created contact with ID: {contact_id}")
+
+        # 2. Get the contact
+        contact = odoo.get_contact(contact_id)
+        if contact:
+            print(f"Retrieved contact: {contact['name']} ({contact['email']})")
+
+        # 3. Update the contact
+        odoo.update_contact(contact_id, {'name': 'Updated Gemini Contact'})
+        updated_contact = odoo.get_contact(contact_id)
+        if updated_contact:
+            print(f"Updated contact name: {updated_contact['name']}")
+
+        # 4. List contacts
+        contacts = odoo.get_contacts(limit=5)
+        print(f"Retrieved {len(contacts)} contacts")
+        for c in contacts:
+            print(f" - {c['name']}")
+
+        # 5. Delete the contact
+        deleted = odoo.delete_contact(contact_id)
+        print(f"Deleted contact: {deleted}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 
