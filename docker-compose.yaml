@@ -1,28 +1,33 @@
 services:
   db:
     image: postgres:15
+    container_name: db
     environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_PASSWORD=odoo
-      - POSTGRES_USER=odoo
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=odoo
     volumes:
       - odoo-db:/var/lib/postgresql/data
     restart: always
 
   odoo:
     image: odoo:latest
+    container_name: odoo
     depends_on:
       - db
     ports:
       - "8069:8069"
+    tty: true # Mimics -t flag
     volumes:
       - odoo-data:/var/lib/odoo
-      # Uncomment and update the path if you use custom modules
-      # - ./odoo_integration/extra-addons:/mnt/extra-addons
+      # Mounts odoo_integration to /mnt/extra-addons as per docs
+      - ./odoo_integration:/mnt/extra-addons
     environment:
       - HOST=db
-      - USER=odoo
-      - PASSWORD=odoo
+      - USER=admin
+      - PASSWORD=admin
+    links:
+      - db:db
     restart: always
 
 volumes:
