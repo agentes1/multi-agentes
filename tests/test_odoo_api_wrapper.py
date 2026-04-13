@@ -63,3 +63,18 @@ def test_delete_contact():
     res = wrapper.delete_contact(cid)
     assert res is True
     assert wrapper.get_contact(cid) is None
+
+# --- SEARCH TESTS ---
+
+def test_search():
+    pid = wrapper.create_product({'name': 'Search Test', 'default_code': 'search_code'})
+    ids = wrapper.search('product.product', [('default_code', '=', 'search_code')])
+    assert pid in ids
+    wrapper.delete_product(pid)
+
+def test_search_read():
+    pid = wrapper.create_product({'name': 'Search Read Test', 'default_code': 'read_code'})
+    results = wrapper.search_read('product.product', [('default_code', '=', 'read_code')], fields=['name'])
+    assert len(results) > 0
+    assert results[0]['name'] == 'Search Read Test'
+    wrapper.delete_product(pid)

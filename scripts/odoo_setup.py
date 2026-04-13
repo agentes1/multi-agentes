@@ -1,6 +1,8 @@
 from odoo_integration.odoo_api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
+MODULES = ['base', 'sale_management', 'stock', 'crm']
+
 PRODUCTS = [
     {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm_base", "type": "service"},
     {"name": "Clasificación de emails con IA", "list_price": 1800, "description": "Clasificación automática de correos y sugerencia de respuesta", "default_code": "email_ai", "type": "service"},
@@ -17,8 +19,7 @@ CUSTOMERS = [
 if __name__ == "__main__":
     odoo = OdooAPIWrapper(ODOO_BASE_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
     
-    modules = ['base', 'sale_management', 'stock', 'crm']
-    [odoo.install_module(m) for m in modules]
+    [odoo.install_module(m) for m in MODULES]
 
     for p in PRODUCTS:
         if not odoo.search('product.product', [('default_code', '=', p['default_code'])]):

@@ -70,8 +70,8 @@ class OdooAPIWrapper:
     def delete_contact(self, contact_id):
         return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'unlink', [[contact_id]])
 
+    # miscellaneous
     def install_module(self, module_name):
-        """Searches for a module by name and triggers its installation."""
         module_ids = self.search('ir.module.module', [('name', '=', module_name)])
         if module_ids:
             return self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'button_immediate_install', [module_ids])
@@ -87,3 +87,11 @@ class OdooAPIWrapper:
         if fields:
             params['fields'] = fields
         return self._models.execute_kw(self._db, self._uid, self._password, model, 'search_read', [domain], params)
+
+    def drop_model(self, model):
+        batch_limit = 1000
+        while True:
+            all_ids = self.search(model, [], limit=batch_limit)
+            if not all_ids: break
+            self._models.execute_kw(self._db, self._uid, self._password, model, 'unlink', [[all_ids]])
+        return True
