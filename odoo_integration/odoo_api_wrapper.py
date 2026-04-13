@@ -67,6 +67,8 @@ class OdooAPIWrapper:
     def delete_contact(self, contact_id):
         return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'unlink', [[contact_id]])
 
+
+# Examples / Tests -> this only executes if you run the file directly
 if __name__ == '__main__':
     BASE_URL = 'http://localhost:8069/xmlrpc/2'
     db = 'odoo'
@@ -106,6 +108,39 @@ if __name__ == '__main__':
         # 5. Delete the contact
         deleted = odoo.delete_contact(contact_id)
         print(f"Deleted contact: {deleted}")
+
+        print("\n" + "="*20 + "\nTesting Products\n" + "="*20)
+
+        # 1. Create a product
+        test_product_data = {
+            'name': 'Test Gemini Product',
+            'list_price': 99.99,
+            'description': 'A test product created by Gemini',
+            'type': 'service'
+        }
+        product_id = odoo.create_product(test_product_data)
+        print(f"Created product with ID: {product_id}")
+
+        # 2. Get the product
+        product = odoo.get_product(product_id)
+        if product:
+            print(f"Retrieved product: {product['display_name']} (Price: {product['list_price']})")
+
+        # 3. Update the product
+        odoo.update_product(product_id, {'list_price': 149.99})
+        updated_product = odoo.get_product(product_id)
+        if updated_product:
+            print(f"Updated product price: {updated_product['list_price']}")
+
+        # 4. List products
+        products = odoo.get_products()
+        print(f"Retrieved {len(products)} products")
+        for p in products:
+            print(f" - {p['display_name']}")
+
+        # 5. Delete the product
+        deleted = odoo.delete_product(product_id)
+        print(f"Deleted product: {deleted}")
 
     except Exception as e:
         print(f"An error occurred: {e}")
