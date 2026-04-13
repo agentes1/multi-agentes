@@ -72,7 +72,18 @@ class OdooAPIWrapper:
 
     def install_module(self, module_name):
         """Searches for a module by name and triggers its installation."""
-        module_ids = self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'search', [[('name', '=', module_name)]])
+        module_ids = self.search('ir.module.module', [('name', '=', module_name)])
         if module_ids:
             return self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'button_immediate_install', [module_ids])
         return False
+
+    def search(self, model, domain, limit=100):
+        """Returns a list of IDs for records matching the domain."""
+        return self._models.execute_kw(self._db, self._uid, self._password, model, 'search', [domain], {'limit': limit})
+
+    def search_read(self, model, domain, fields=None, limit=100):
+        """Returns a list of records matching the domain with specific fields."""
+        params = {'limit': limit}
+        if fields:
+            params['fields'] = fields
+        return self._models.execute_kw(self._db, self._uid, self._password, model, 'search_read', [domain], params)

@@ -3,21 +3,21 @@ from odoo_integration.odoo_api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
 def run_setup():
-    print("Connecting to Odoo...")
+    print(f"Connecting to Odoo at {ODOO_BASE_URL}...")
     odoo = OdooAPIWrapper(ODOO_BASE_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
     
-    # 1. Install Modules
-    modules = ['base', 'sale_management', 'stock'] # contacts, sales, inventory
+    # 1. Install Modules: Contacts, Sales, Inventory (and CRM from original)
+    modules = ['base', 'sale_management', 'stock', 'crm']
     for module in modules:
-        print(f"Installing {module} module...")
+        print(f"Ensuring module {module} is installed...")
         res = odoo.install_module(module)
         if res:
-            print(f"Triggered installation for {module}.")
+            print(f"Installation of {module} started.")
             time.sleep(5)
         else:
-            print(f"Module {module} not found or already installed.")
+            print(f"Module {module} already installed or not found.")
 
-    # 2. Create Products
+    # 2. Create Products from setup_odoo.py
     products = [
         {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm_base", "type": "service"},
         {"name": "Clasificación de emails con IA", "list_price": 1800, "description": "Clasificación automática de correos y sugerencia de respuesta", "default_code": "email_ai", "type": "service"},
@@ -26,31 +26,31 @@ def run_setup():
         {"name": "Dashboard comercial", "list_price": 900, "description": "Panel de seguimiento de actividad comercial y embudo", "default_code": "dashboard", "type": "service"},
     ]
 
-    print("Creating products...")
+    print("\nSetting up Product Catalog...")
     for p in products:
-        existing = odoo._models.execute_kw(ODOO_DB, odoo._uid, ODOO_PASSWORD, 'product.product', 'search', [[('default_code', '=', p['default_code'])]])
+        existing = odoo.search('product.product', [('default_code', '=', p['default_code'])])
         if not existing:
             product_id = odoo.create_product(p)
-            print(f"Created product {p['name']} (ID {product_id})")
+            print(f" [+] Created product: {p['name']} (ID: {product_id})")
         else:
-            print(f"Product {p['name']} already exists.")
+            print(f" [~] Product {p['name']} already exists.")
 
-    # 3. Create Customers
+    # 3. Create Customers from setup_odoo.py
     customers = [
         {"name": "ACME", "is_company": True},
         {"name": "MEGACORP", "is_company": True},
     ]
 
-    print("Creating customers...")
+    print("\nSetting up Customers...")
     for c in customers:
-        existing = odoo._models.execute_kw(ODOO_DB, odoo._uid, ODOO_PASSWORD, 'res.partner', 'search', [[('name', '=', c['name'])]])
+        existing = odoo.search('res.partner', [('name', '=', c['name'])])
         if not existing:
             contact_id = odoo.create_contact(c)
-            print(f"Created customer {c['name']} (ID {contact_id})")
+            print(f" [+] Created customer: {c['name']} (ID: {contact_id})")
         else:
-            print(f"Customer {c['name']} already exists.")
+            print(f" [~] Customer {c['name']} already exists.")
 
-    print("Setup complete.")
+    print("\nOdoo Setup Complete.")
 
 if __name__ == "__main__":
     run_setup()
