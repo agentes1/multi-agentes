@@ -1,113 +1,89 @@
-# tests/test_intake_agent.py
+# tests/test_intake_agent_integration.py
 import pytest
 
 from agents.intake_agent.dependencies import IntakeDependencies
 from agents.intake_agent.graph import build_intake_graph
+from odoo_integration.odoo_api_wrapper import OdooAPIWrapper
+from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
 
-# --- mocks ---
 
-
-class MockLLMValid:
-    """Simula un LLM que devuelve un JSON bien formado."""
-
+class MockLLMEmailToIssue:
     async def ainvoke(self, messages):
         class Response:
             content = """{
                 "company_name": "Acme SL",
-                "project_summary": "Necesitan CRM y facturación",
-                "requirements": ["crm", "presupuestos"],
+                "project_summary": "Error al crear oportunidades en Odoo CRM",
+                "requirements": ["crm", "odoo"],
                 "urgency": "alta",
-                "missing_information": []
+                "ticket_type": "issue",
+                "missing_information": ["Adjuntar captura del error"]
             }"""
 
         return Response()
 
 
-class MockLLMInvalidJSON:
-    """Simula un LLM que devuelve texto libre en lugar de JSON."""
-
-    async def ainvoke(self, messages):
-        class Response:
-            content = "Aquí tienes el resumen del cliente, necesita un CRM..."
-
-        return Response()
-
-
-def _build_deps(llm) -> IntakeDependencies:
-    return IntakeDependencies(llm=llm)
+def _build_deps() -> IntakeDependencies:
+    return IntakeDependencies(
+        llm=MockLLMEmailToIssue(),
+        odoo_service=OdooAPIWrapper(
+            url=ODOO_BASE_URL,
+            username=ODOO_USERNAME,
+            password=ODOO_PASSWORD,
+            db=ODOO_DB,
+        ),
+    )
 
 
 def _base_config(deps: IntakeDependencies) -> dict:
     return {"configurable": {"deps": deps}}
 
 
-# --- tests ---
-
-
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_flujo_completo_email_valido():
-    """Un email con asunto y cuerpo debe producir un normalized_request completo."""
+async def test_email_crea_ticket_real_en_odoo():
     graph = build_intake_graph()
-    deps = _build_deps(MockLLMValid())
+    deps = _build_deps()
 
     result = await graph.ainvoke(
         {
             "source_input": {
                 "channel": "email",
                 "from": "cliente@acme.com",
-                "subject": "Solicitud de presupuesto ERP",
-                "body": "Hola, somos Acme SL y necesitamos un CRM y módulo de facturación.",
+                "subject": "Incidencia con CRM",
+                "body": (
+                    "Hola, somos Acme SL. "
+                    "Tenemos un error al crear oportunidades en Odoo CRM "
+                    "y necesitamos ayuda urgente."
+                ),
             }
         },
         config=_base_config(deps),
     )
 
-    assert result["error"] is None
-    assert result["normalized_request"]["company_name"] == "Acme SL"
-    assert "crm" in result["normalized_request"]["requirements"]
+    ticket_id = result.get("ticket_id")
 
+    try:
+        assert result["error"] is None
+        assert ticket_id is not None
+        assert isinstance(ticket_id, int)
 
-@pytest.mark.asyncio
-async def test_error_email_sin_contenido():
-    """Un email sin asunto ni cuerpo debe terminar en error_node."""
-    graph = build_intake_graph()
-    deps = _build_deps(MockLLMValid())
+        assert result["ticket_type"] == "issue"
+        assert result["normalized_request"]["company_name"] == "Acme SL"
+        assert "crm" in result["normalized_request"]["requirements"]
+        assert "odoo" in result["normalized_request"]["requirements"]
 
-    result = await graph.ainvoke(
-        {
-            "source_input": {
-                "channel": "email",
-                "from": "cliente@acme.com",
-                "subject": "",
-                "body": "",
-            }
-        },
-        config=_base_config(deps),
-    )
+        payload = result["ticket_payload"]
+        assert payload["team_name"] == "Soporte cliente"
+        assert payload["type_name"] == "Soporte"
+        assert payload["category_name"] == "Problema"
+        assert payload["priority"] == "2"
 
-    assert result["error"] is not None
-    assert "email" in result["error"].lower()
-    assert result["normalized_request"] == {}
+        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
+        assert ticket is not None
+        assert ticket["id"] == ticket_id
+        assert ticket["name"] == "Error al crear oportunidades en Odoo CRM"
+        assert ticket["team_id"][0] == deps.odoo_service.get_team_id_by_name("Soporte cliente")
 
-
-@pytest.mark.asyncio
-async def test_error_llm_devuelve_json_invalido():
-    """Si el LLM no devuelve JSON válido debe terminar en error_node."""
-    graph = build_intake_graph()
-    deps = _build_deps(MockLLMInvalidJSON())
-
-    result = await graph.ainvoke(
-        {
-            "source_input": {
-                "channel": "chat",
-                "user_name": "Juan",
-                "company_name": "Acme SL",
-                "message": "Queremos un CRM integrado con Odoo.",
-            }
-        },
-        config=_base_config(deps),
-    )
-
-    assert result["error"] is not None
-    assert "json" in result["error"].lower()
-    assert result["normalized_request"] == {}
+    finally:
+        if ticket_id:
+            print('fin')

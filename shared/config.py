@@ -11,5 +11,5 @@ OLLAMA_TEMPERATURE = 0
 
 ODOO_BASE_URL = 'http://localhost:8069/xmlrpc/2'
 ODOO_DB = 'odoo'
-ODOO_USERNAME = 'senen.marques@live.u-tad.com'
-ODOO_PASSWORD = 'admin'
+ODOO_USERNAME = 'admin'
+ODOO_PASSWORD = 'adminpass'

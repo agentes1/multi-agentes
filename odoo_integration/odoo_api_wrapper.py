@@ -95,3 +95,130 @@ class OdooAPIWrapper:
             if not all_ids: break
             self._models.execute_kw(self._db, self._uid, self._password, model, 'unlink', [[all_ids]])
         return True
+
+
+# helpers helpdesk
+    # obtiene el id de un equipo por nombre exacto
+    def get_team_id_by_name(self, team_name):
+        team_ids = self.search(
+            'helpdesk.ticket.team',
+            [('name', '=', team_name)],
+            limit=1,
+        )
+        return team_ids[0] if team_ids else None
+
+    # obtiene el id de un tipo de ticket por nombre exacto
+    def get_ticket_type_id_by_name(self, type_name):
+        type_ids = self.search(
+            'helpdesk.ticket.type',
+            [('name', '=', type_name)],
+            limit=1,
+        )
+        return type_ids[0] if type_ids else None
+
+    # obtiene el id de una categoría por nombre exacto
+    def get_category_id_by_name(self, category_name):
+        category_ids = self.search(
+            'helpdesk.ticket.category',
+            [('name', '=', category_name)],
+            limit=1,
+        )
+        return category_ids[0] if category_ids else None
+
+    # obtiene los ids de las etiquetas que existan en Odoo
+    # si una etiqueta no existe simplemente no se devuelve
+    def get_tag_ids_by_names(self, tag_names):
+        if not tag_names:
+            return []
+
+        return self.search(
+            'helpdesk.ticket.tag',
+            [('name', 'in', tag_names)],
+            limit=100,
+        )
+
+    # obtiene el motivo si existe y pertenece al equipo indicado
+    # se deja como helper opcional porque todavía no has definido motivos
+    def get_motive_id_by_name_and_team(self, motive_name, team_id):
+        motive_ids = self.search(
+            'helpdesk.ticket.motive',
+            [('name', '=', motive_name), ('team_id', '=', team_id)],
+            limit=1,
+        )
+        return motive_ids[0] if motive_ids else None
+
+    # crea un ticket real en el modelo helpdesk.ticket
+    # se mantiene simple: solo campos necesarios para tu flujo local
+    def create_helpdesk_ticket(
+        self,
+        title,
+        description,
+        team_id,
+        priority="1",
+        type_id=None,
+        category_id=None,
+        tag_ids=None,
+        motive_id=None,
+    ):
+        vals = {
+            'name': title,
+            'description': description,
+            'team_id': team_id,
+            'priority': priority,
+        }
+
+        # campos opcionales: solo se añaden si existen
+        if type_id:
+            vals['type_id'] = type_id
+
+        if category_id:
+            vals['category_id'] = category_id
+
+        if motive_id:
+            vals['motive_id'] = motive_id
+
+        # relación many2many con etiquetas
+        if tag_ids:
+            vals['tag_ids'] = [(6, 0, tag_ids)]
+
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'helpdesk.ticket',
+            'create',
+            [vals],
+        )
+    
+    def get_helpdesk_ticket(self, ticket_id):
+        result = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "helpdesk.ticket",
+            "read",
+            [[ticket_id]],
+        )
+        return result[0] if result else None
+    
+    def get_helpdesk_tickets(self, limit: int = 100):
+        ids = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "helpdesk.ticket",
+            "search",
+            [[]],
+            {"limit": limit},
+        )
+        if not ids:
+            return []
+
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "helpdesk.ticket",
+            "read",
+            [ids],
+        )

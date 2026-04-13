@@ -5,7 +5,6 @@ from langchain_core.runnables import RunnableConfig
 
 from agents.intake_agent.dependencies import IntakeDependencies
 from agents.intake_agent.state import IntakeState
-from schemas.budget import NormalizedRequest
 from shared.catalog import normalize_requirement
 
 
@@ -79,13 +78,13 @@ Mensaje:
 
 
 # extrae del texto unificado un JSON estructurado usando el LLM
-# error si el LLM no devuelve nada mínimamente aprovechable
+# además clasifica el mensaje como presupuesto, incidencia o descarte
 async def extract_request_node(state: IntakeState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
     extracted_text = state["extracted_text"]
 
     prompt = f"""
-Eres un agente comercial que analiza mensajes de clientes y los transforma en solicitudes estructuradas para presupuestación.
+Eres un agente que analiza mensajes de clientes y los transforma en solicitudes estructuradas para crear tickets en Odoo.
 
 Debes devolver un JSON válido con esta estructura exacta:
 {{
@@ -93,14 +92,21 @@ Debes devolver un JSON válido con esta estructura exacta:
   "project_summary": "string",
   "requirements": ["crm", "emails", "presupuestos", "odoo", "dashboard"],
   "urgency": "baja|media|alta",
+  "ticket_type": "budget|issue|discard",
   "missing_information": []
 }}
+
+Significado de ticket_type:
+- "budget": el cliente pide presupuesto, propuesta, precio, implantación o módulos
+- "issue": el cliente reporta un problema, error, incidencia o soporte
+- "discard": el mensaje no contiene una petición útil o clara
 
 Reglas:
 - Solo puedes usar esos valores de requirements si aplican claramente
 - No inventes datos
 - Si el nombre de empresa no aparece claro, usa "Desconocido"
 - Si falta información relevante, añádelo en missing_information
+- Si no hay una necesidad clara, usa ticket_type = "discard"
 - Devuelve solo JSON válido, sin explicaciones
 
 Texto del cliente:
@@ -112,57 +118,229 @@ Texto del cliente:
 
     try:
         parsed = json.loads(content)
-        normalized = NormalizedRequest.model_validate(parsed)
     except Exception:
-        # si el LLM no devuelve JSON válido dos veces seguidas es un error real
         return {
             "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
         }
 
-    # normaliza requisitos usando catálogo compartido para evitar sinónimos o variantes
+    # validación mínima de estructura
+    required_keys = {
+        "company_name",
+        "project_summary",
+        "requirements",
+        "urgency",
+        "ticket_type",
+        "missing_information",
+    }
+    if not required_keys.issubset(parsed.keys()):
+        return {
+            "error": "El JSON generado no contiene todos los campos obligatorios.",
+        }
+
+    # normaliza requisitos usando catálogo compartido para evitar sinónimos
     normalized_requirements = []
-    for req in normalized.requirements:
+    for req in parsed.get("requirements", []):
         value = normalize_requirement(req)
         if value and value not in normalized_requirements:
             normalized_requirements.append(value)
 
-    normalized.requirements = normalized_requirements
+    parsed["requirements"] = normalized_requirements
+
+    # normalización básica de valores categóricos
+    if parsed.get("urgency") not in {"baja", "media", "alta"}:
+        parsed["urgency"] = "media"
+
+    if parsed.get("ticket_type") not in {"budget", "issue", "discard"}:
+        parsed["ticket_type"] = "discard"
+
+    # limpieza mínima para evitar campos vacíos raros
+    if not parsed.get("company_name"):
+        parsed["company_name"] = "Desconocido"
+
+    if not isinstance(parsed.get("missing_information"), list):
+        parsed["missing_information"] = []
 
     return {
         "messages": [
-            AIMessage(content=f"Solicitud estructurada generada para {normalized.company_name}")
+            AIMessage(
+                content=(
+                    f"Solicitud estructurada generada para {parsed['company_name']} "
+                    f"con tipo {parsed['ticket_type']}"
+                )
+            )
         ],
-        "normalized_request": normalized.model_dump(),
+        "normalized_request": parsed,
+        "ticket_type": parsed["ticket_type"],
         "error": None,
     }
 
 
-# valida que la solicitud normalizada tenga los campos mínimos necesarios
-# no es bloqueante: los avisos se acumulan en validation_notes y el flujo continúa
-async def validate_request_node(state: IntakeState, config: RunnableConfig) -> dict:
+# prepara los datos del ticket según la solicitud estructurada
+# aquí ya se hace el mapeo directo a los valores que existen realmente en tu Odoo local
+async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dict:
     normalized_request = state["normalized_request"]
-    notes = []
 
-    if normalized_request.get("company_name") == "Desconocido":
-        notes.append("No se ha podido identificar claramente la empresa")
-    if not normalized_request.get("requirements"):
-        notes.append("No se han identificado requisitos funcionales claros")
-    if not normalized_request.get("project_summary"):
-        notes.append("No se ha podido resumir claramente la necesidad del cliente")
+    company_name = normalized_request.get("company_name", "Desconocido")
+    project_summary = normalized_request.get("project_summary", "").strip()
+    requirements = normalized_request.get("requirements", [])
+    urgency = normalized_request.get("urgency", "media")
+    ticket_type = normalized_request.get("ticket_type", "discard")
+    missing_information = normalized_request.get("missing_information", [])
+
+    # validación: necesitamos al menos un resumen mínimo para crear ticket
+    if not project_summary:
+        return {
+            "error": "La solicitud no contiene un resumen suficiente para crear el ticket.",
+        }
+
+    # mapeo simple y directo al catálogo real que has creado en Odoo
+    if ticket_type == "budget":
+        team_name = "Presupuestos"
+        type_name = "Presupuesto"
+        category_name = "Consulta presupuesto"
+        tag_names = ["Cliente nuevo"]
+
+    elif ticket_type == "issue":
+        team_name = "Soporte cliente"
+        type_name = "Soporte"
+        category_name = "Problema"
+        tag_names = []
+
+    else:
+        # los mensajes poco claros van a soporte para revisión manual
+        team_name = "Soporte cliente"
+        type_name = "Soporte"
+        category_name = "Interno"
+        tag_names = ["Pendiente validación"]
+
+    # mapeo de urgencia a prioridad real del módulo helpdesk_mgmt
+    # 0 = baja, 1 = media, 2 = alta, 3 = muy alta
+    urgency_to_priority = {
+        "baja": "0",
+        "media": "1",
+        "alta": "2",
+    }
+    priority = urgency_to_priority.get(urgency, "1")
+
+    # si faltan datos relevantes marcamos una etiqueta adicional
+    if missing_information and "Faltan datos" not in tag_names:
+        tag_names.append("Faltan datos")
+
+    # si la urgencia es alta añadimos también la etiqueta Urgente
+    if urgency == "alta" and "Urgente" not in tag_names:
+        tag_names.append("Urgente")
+
+    # descripción corta y útil en texto plano
+    description_lines = [
+        f"Empresa: {company_name}",
+        "",
+        f"Resumen: {project_summary}",
+    ]
+
+    if requirements:
+        description_lines.append("")
+        description_lines.append("Requisitos detectados:")
+        description_lines.extend([f"- {req}" for req in requirements[:5]])
+
+    if missing_information:
+        description_lines.append("")
+        description_lines.append("Faltan datos:")
+        description_lines.extend([f"- {note}" for note in missing_information[:3]])
+
+    ticket_payload = {
+        "title": project_summary,
+        "description": "\n".join(description_lines),
+        "priority": priority,
+        "team_name": team_name,
+        "type_name": type_name,
+        "category_name": category_name,
+        "tag_names": tag_names,
+        # se deja opcional porque no has indicado motivos creados en Odoo
+        "motive_name": None,
+    }
 
     return {
-        "messages": [AIMessage(content="Solicitud validada")],
-        "validation_notes": notes,
+        "messages": [
+            AIMessage(
+                content=f"Ticket preparado para el equipo {team_name}"
+            )
+        ],
+        "ticket_payload": ticket_payload,
+        "error": None,
     }
 
 
-# nodo terminal de error: se alcanza cuando prepare o extract detectan un fallo
-# devuelve un normalized_request vacío para que el sistema receptor no rompa
+# crea el ticket en Odoo usando los modelos reales del módulo helpdesk de OCA
+# resuelve nombres a ids antes de crear el ticket para no depender de textos sueltos
+async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict:
+    deps = _get_deps(config)
+
+    ticket_payload = state["ticket_payload"]
+    ticket_type = state["ticket_type"]
+
+    try:
+        # resolver equipo
+        team_id = deps.odoo_service.get_team_id_by_name(ticket_payload["team_name"])
+        if not team_id:
+            raise ValueError(f"No existe el equipo '{ticket_payload['team_name']}' en Odoo")
+
+        # resolver tipo de ticket
+        type_id = deps.odoo_service.get_ticket_type_id_by_name(ticket_payload["type_name"])
+        if not type_id:
+            raise ValueError(f"No existe el tipo de ticket '{ticket_payload['type_name']}' en Odoo")
+
+        # resolver categoría
+        category_id = deps.odoo_service.get_category_id_by_name(ticket_payload["category_name"])
+        if not category_id:
+            raise ValueError(f"No existe la categoría '{ticket_payload['category_name']}' en Odoo")
+
+        # resolver etiquetas; si alguna no existe simplemente no se añade
+        tag_ids = deps.odoo_service.get_tag_ids_by_names(ticket_payload["tag_names"])
+
+        # resolver motivo solo si se ha informado
+        motive_id = None
+        if ticket_payload.get("motive_name"):
+            motive_id = deps.odoo_service.get_motive_id_by_name_and_team(
+                ticket_payload["motive_name"],
+                team_id,
+            )
+
+        # crear ticket real en helpdesk.ticket
+        ticket_id = deps.odoo_service.create_helpdesk_ticket(
+            title=ticket_payload["title"],
+            description=ticket_payload["description"],
+            team_id=team_id,
+            priority=ticket_payload["priority"],
+            type_id=type_id,
+            category_id=category_id,
+            tag_ids=tag_ids,
+            motive_id=motive_id,
+        )
+
+    except Exception as e:
+        return {
+            "error": f"Error al crear el ticket en Odoo: {e}",
+        }
+
+    return {
+        "messages": [
+            AIMessage(content=f"Ticket creado correctamente con id {ticket_id}")
+        ],
+        "ticket_id": ticket_id,
+        "final_text": (
+            f"Ticket creado correctamente en Odoo con id {ticket_id} "
+            f"y tipo {ticket_type}."
+        ),
+        "error": None,
+    }
+
+
+# nodo terminal de error: se alcanza cuando un nodo anterior detecta un fallo
 async def error_node(state: IntakeState) -> dict:
     error_msg = state.get("error", "Error desconocido en el agente de intake")
 
     return {
         "messages": [AIMessage(content=f"No se ha podido procesar la entrada: {error_msg}")],
         "normalized_request": {},
-        "validation_notes": [error_msg],
+        "final_text": f"Error: {error_msg}",
     }

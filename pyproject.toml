@@ -48,3 +48,7 @@ asyncio_mode = "auto"                    # todos los tests async se ejecutan sin
 testpaths = ["tests"]                    # carpeta donde pytest busca tests
 python_files = ["test_*.py"]            # patrón de ficheros de test
 python_functions = ["test_*"]           # patrón de funciones de test
+pythonpath = ["."]
+markers = [
+    "integration: tests de integración contra Odoo real",
+]

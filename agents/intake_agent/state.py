@@ -6,11 +6,22 @@ from langgraph.graph.message import (
 
 
 # definir estado compartido del grafo para intake
-class IntakeState(TypedDict):
+class IntakeState(TypedDict, total=False):
     # guarda el historial de mensajes del flujo
     messages: Annotated[list, add_messages]
-    source_input: dict  # entrada cruda original (email, chat, etc)
-    extracted_text: str  # texto unificado extraído de la entrada
-    normalized_request: dict  # solicitud estructurada y validada
-    validation_notes: list[str]  # avisos no bloqueantes sobre la solicitud
-    error: str | None  # error producido en el flujo, None si no hay error
+    # entrada cruda original (email, chat, etc)
+    source_input: dict
+    # texto unificado extraído de la entrada
+    extracted_text: str
+    # solicitud estructurada generada por el LLM
+    normalized_request: dict
+    # tipo de ticket detectado por el agente: budget, issue o discard
+    ticket_type: str
+    # datos finales preparados para crear el ticket en Odoo
+    ticket_payload: dict
+    # id del ticket creado en Odoo
+    ticket_id: int
+    # texto final del resultado del flujo
+    final_text: str
+    # error producido en el flujo, None o ausencia si no hay error
+    error: str | None
