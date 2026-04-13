@@ -69,3 +69,10 @@ class OdooAPIWrapper:
 
     def delete_contact(self, contact_id):
         return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'unlink', [[contact_id]])
+
+    def install_module(self, module_name):
+        """Searches for a module by name and triggers its installation."""
+        module_ids = self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'search', [[('name', '=', module_name)]])
+        if module_ids:
+            return self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'button_immediate_install', [module_ids])
+        return False
