@@ -1,7 +1,7 @@
 from odoo.api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
-MODULES = ['base', 'sale_management', 'stock', 'crm']
+MODULES = ['base', 'sale_management', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive']
 
 PRODUCTS = [
     {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm_base", "type": "service"},
