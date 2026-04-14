@@ -11,5 +11,5 @@ OLLAMA_TEMPERATURE = 0
 
 ODOO_BASE_URL = 'http://localhost:8069/xmlrpc/2'
 ODOO_DB = 'odoo'
-ODOO_USERNAME = 'admin'
-ODOO_PASSWORD = 'adminpass'
+ODOO_USERNAME = 'odoo'
+ODOO_PASSWORD = 'multi-agente-agentes1'
