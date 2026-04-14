@@ -3,129 +3,72 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deepeval.metrics import BaseMetric
+from deepeval.metrics import AnswerRelevancyMetric, GEval
+from deepeval.models import OllamaModel
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
 
-class PipelineContractMetric(BaseMetric):
-    _required_params = [LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT]
-
-    def __init__(
-        self,
-        threshold: float = 0.8,
-        include_reason: bool = True,
-        async_mode: bool = True,
-        strict_mode: bool = False,
-    ) -> None:
-        self.threshold = threshold
-        self.include_reason = include_reason
-        self.async_mode = async_mode
-        self.strict_mode = strict_mode
-        self.verbose_mode = False
-        self.score = None
-        self.reason = None
-        self.success = None
-        self.error = None
-        self.evaluation_model = None
-        self.evaluation_cost = None
-        self.verbose_logs = None
-        self.score_breakdown = None
-        self.skipped = False
-        self.model = None
-        self.using_native_model = None
-
-    def measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
-        try:
-            metadata = test_case.additional_metadata or {}
-            components: list[float] = []
-            reasons: list[str] = []
-
-            ok_flag = bool(metadata.get("ok"))
-            if ok_flag:
-                components.append(1.0)
-                reasons.append("Pipeline status: ok=true")
-
-                quote_result = metadata.get("quote_result") or {}
-                structure_score, structure_reason = self._check_quote_structure(quote_result)
-                components.append(structure_score)
-                reasons.append(structure_reason)
-
-                final_text = str(test_case.actual_output or "").strip()
-                components.append(1.0 if final_text else 0.0)
-                reasons.append("Final text present" if final_text else "Final text missing")
-            else:
-                error_text = str(metadata.get("error") or "").strip()
-                components.append(1.0 if error_text else 0.0)
-                reasons.append(
-                    "Error shape valid (ok=false and error present)"
-                    if error_text
-                    else "Error shape invalid (ok=false but error missing)"
-                )
-
-            score = sum(components) / len(components)
-            if self.strict_mode and score < self.threshold:
-                score = 0.0
-
-            self.score = score
-            self.success = self.score >= self.threshold
-            self.reason = "\n".join(reasons) if self.include_reason else None
-            return self.score
-        except Exception as exc:
-            self.error = str(exc)
-            self.success = False
-            raise
-
-    async def a_measure(self, test_case: LLMTestCase, *args: Any, **kwargs: Any) -> float:
-        return self.measure(test_case, *args, **kwargs)
-
-    def is_successful(self) -> bool:
-        if self.error is not None:
-            self.success = False
-        else:
-            self.success = bool(self.score is not None and self.score >= self.threshold)
-        return self.success
-
-    @property
-    def __name__(self) -> str:
-        return "Pipeline Contract"
-
-    @staticmethod
-    def _check_quote_structure(quote_result: dict[str, Any]) -> tuple[float, str]:
-        required_fields = ["company_name", "lines", "subtotal", "discount", "total", "currency"]
-        missing = [field for field in required_fields if field not in quote_result]
-        if missing:
-            return 0.0, f"Quote structure invalid, missing: {missing}"
-
-        lines = quote_result.get("lines")
-        if not isinstance(lines, list) or len(lines) == 0:
-            return 0.0, "Quote lines must be a non-empty list"
-
-        line_required = ["product_code", "quantity", "unit_price"]
-        for idx, line in enumerate(lines):
-            if not isinstance(line, dict):
-                return 0.0, f"Line {idx} is not a dict: {type(line)}"
-            missing_in_line = [field for field in line_required if field not in line]
-            if missing_in_line:
-                return 0.0, f"Line {idx} missing fields: {missing_in_line}"
-
-        subtotal = quote_result.get("subtotal")
-        discount = quote_result.get("discount")
-        total = quote_result.get("total")
-        if not all(isinstance(value, (int, float)) for value in (subtotal, discount, total)):
-            return 0.0, "Quote structure invalid, totals are not numeric"
-
-        expected_total = float(subtotal) - float(discount)
-        if abs(float(total) - expected_total) > 0.05:
-            return 0.0, (
-                "Quote totals invalid: "
-                f"subtotal={subtotal}, discount={discount}, total={total}, expected={expected_total}"
-            )
-
-        return 1.0, "Quote structure and totals are valid"
+def get_eval_model(model_name: str = "qwen3:4b") -> OllamaModel:
+    """Returns a local Ollama model for use as DeepEval evaluator."""
+    return OllamaModel(model=model_name)
 
 
-def build_pipeline_test_case(source_input: dict[str, Any], pipeline_result: dict[str, Any]) -> LLMTestCase:
-    """Build a deterministic DeepEval test case from pipeline I/O."""
+def get_eval_metrics(model_name: str = "qwen3:4b") -> list:
+    """Returns the list of DeepEval pre-built metrics used to evaluate pipeline output.
+
+    Metrics:
+    - AnswerRelevancyMetric: measures if the quote text is relevant to the customer request.
+    - GEval (Quote Quality): measures if the response is a professional quote in Spanish
+      with pricing info and ERP module references.
+    """
+    eval_model = get_eval_model(model_name)
+
+    answer_relevancy = AnswerRelevancyMetric(
+        threshold=0.5,
+        model=eval_model,
+        include_reason=True,
+    )
+
+    quote_quality = GEval(
+        name="Quote Quality",
+        criteria=(
+            "The response is a professional sales quote or budget document written in Spanish. "
+            "It must mention at least one specific ERP module or service, include pricing information "
+            "(amounts in euros), and directly address the customer's stated needs from the input."
+        ),
+        evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+        threshold=0.5,
+        model=eval_model,
+    )
+
+    return [answer_relevancy, quote_quality]
+
+
+def build_pipeline_test_case(
+    source_input: dict[str, Any], pipeline_result: dict[str, Any]
+) -> LLMTestCase:
+    """Build a DeepEval LLMTestCase from pipeline I/O.
+
+    Produces a human-readable input string (not raw JSON) so that
+    LLM-based metrics can reason about it correctly.
+    """
+    channel = source_input.get("channel", "unknown")
+
+    if channel == "email":
+        input_text = (
+            f"Email de {source_input.get('from', 'desconocido')}. "
+            f"Asunto: {source_input.get('subject', '')}. "
+            f"Mensaje: {source_input.get('body', '')}"
+        ).strip()
+    elif channel == "chat":
+        input_text = (
+            f"Chat de {source_input.get('user_name', 'desconocido')} "
+            f"en {source_input.get('company_name', 'empresa desconocida')}. "
+            f"Mensaje: {source_input.get('message', '')}"
+        ).strip()
+    else:
+        input_text = json.dumps(source_input, ensure_ascii=False)
+
     actual_output = (
         str(pipeline_result.get("final_text", ""))
         if pipeline_result.get("ok", False)
@@ -133,7 +76,7 @@ def build_pipeline_test_case(source_input: dict[str, Any], pipeline_result: dict
     )
 
     return LLMTestCase(
-        input=json.dumps(source_input, ensure_ascii=False),
+        input=input_text,
         actual_output=actual_output,
         additional_metadata={
             "ok": bool(pipeline_result.get("ok", False)),
