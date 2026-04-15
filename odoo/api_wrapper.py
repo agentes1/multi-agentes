@@ -222,3 +222,110 @@ class OdooAPIWrapper:
             "read",
             [ids],
         )
+    
+    # helpers presupuesto / ventas
+
+    def get_or_create_contact(self, company_name):
+        partners = self.search_read(
+            'res.partner',
+            [('name', '=', company_name)],
+            fields=['id', 'name'],
+            limit=1,
+        )
+        if partners:
+            return partners[0]['id']
+        return self.create_contact({'name': company_name, 'company_type': 'company'})
+
+    def get_product_by_code(self, product_code):
+        products = self.search_read(
+            'product.product',
+            [('default_code', '=', product_code)],
+            fields=['id', 'name', 'default_code', 'lst_price'],
+            limit=1,
+        )
+        return products[0] if products else None
+
+    def create_sale_order(self, partner_id):
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'sale.order',
+            'create',
+            [{'partner_id': partner_id}],
+        )
+
+    def create_sale_order_line(self, order_id, product_id, quantity=1):
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'sale.order.line',
+            'create',
+            [{
+                'order_id': order_id,
+                'product_id': product_id,
+                'product_uom_qty': quantity,
+            }],
+        )
+
+    def get_sale_order(self, order_id):
+        result = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'sale.order',
+            'read',
+            [[order_id]],
+        )
+        return result[0] if result else None
+
+    def get_sale_order_lines(self, order_id):
+        lines = self.search_read(
+            'sale.order.line',
+            [('order_id', '=', order_id)],
+            fields=[
+                'name',
+                'product_id',
+                'product_uom_qty',
+                'price_unit',
+                'price_subtotal',
+            ],
+            limit=100,
+        )
+
+        # añadimos default_code del producto para mantener coherencia con QuoteLine
+        enriched = []
+        for line in lines:
+            product_data = None
+            product_field = line.get('product_id')
+            if product_field and isinstance(product_field, list):
+                product_id = product_field[0]
+                product = self.get_product(product_id)
+                product_data = product
+
+            enriched.append({
+                'name': line.get('name', ''),
+                'product_uom_qty': line.get('product_uom_qty', 1),
+                'price_unit': line.get('price_unit', 0),
+                'price_subtotal': line.get('price_subtotal', 0),
+                'default_code': product_data.get('default_code', '') if product_data else '',
+            })
+
+        return enriched
+    
+    def find_products_by_text(self, text, limit=20):
+        text = str(text).strip()
+        if not text:
+            return []
+
+        return self.search_read(
+            'product.product',
+            [
+                '|',
+                ('name', 'ilike', text),
+                ('default_code', 'ilike', text),
+            ],
+            fields=['id', 'name', 'default_code', 'lst_price'],
+            limit=limit,
+        )

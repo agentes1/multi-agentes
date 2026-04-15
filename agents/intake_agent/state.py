@@ -23,5 +23,7 @@ class IntakeState(TypedDict, total=False):
     ticket_id: int
     # texto final del resultado del flujo
     final_text: str
+    # warnings, faltan datos importantes en el ticket
+    warnings: list[str]
     # error producido en el flujo, None o ausencia si no hay error
     error: str | None

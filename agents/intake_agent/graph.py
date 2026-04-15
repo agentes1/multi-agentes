@@ -44,36 +44,25 @@ def build_intake_graph():
 
     # nodo normalización del canal de entrada
     builder.add_node("prepare_input_node", prepare_input_node)
-
     # nodo extracción y estructuración con LLM
     builder.add_node("extract_request_node", extract_request_node)
-
     # nodo preparación de los datos finales del ticket
     builder.add_node("prepare_ticket_node", prepare_ticket_node)
-
     # nodo creación real del ticket en Odoo
     builder.add_node("create_ticket_node", create_ticket_node)
-
     # nodo terminal cuando el flujo no puede continuar
     builder.add_node("error_node", error_node)
-
     # orden del flujo
     builder.add_edge(START, "prepare_input_node")
-
     # edge condicional: ¿se pudo extraer texto de la entrada?
     builder.add_conditional_edges("prepare_input_node", _route_after_prepare)
-
     # edge condicional: ¿devolvió el LLM un JSON estructurado válido?
     builder.add_conditional_edges("extract_request_node", _route_after_extract)
-
     # edge condicional: ¿se pudo construir el payload del ticket?
     builder.add_conditional_edges("prepare_ticket_node", _route_after_prepare_ticket)
-
     # edge condicional: ¿se creó correctamente el ticket en Odoo?
     builder.add_conditional_edges("create_ticket_node", _route_after_create_ticket)
-
     # salida de error
     builder.add_edge("error_node", END)
-
     # convertir en grafo ejecutable
     return builder.compile()

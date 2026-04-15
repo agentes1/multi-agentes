@@ -1,39 +1,57 @@
-REQUIREMENT_TO_PRODUCT = {
-    "crm": "crm_base",
-    "emails": "email_ai",
-    "presupuestos": "quotation_ai",
-    "odoo": "odoo_connector",
-    "dashboard": "dashboard",
+# sinónimos de urgencia para convertir variantes del lenguaje natural
+# a los tres valores internos admitidos por el sistema
+URGENCY_SYNONYMS = {
+    "muy urgente": "alta",
+    "urgente": "alta",
+    "alta": "alta",
+
+    "normal": "media",
+    "media": "media",
+    "moderada": "media",
+    "medio": "media",
+
+    "baja": "baja",
+    "bajo": "baja",
+    "poca": "baja",
+    "leve": "baja",
 }
 
 
-REQUIREMENT_SYNONYMS = {
-    "correo": "emails",
-    "email": "emails",
-    "mails": "emails",
-    "mail": "emails",
-    "automatizacion comercial": "crm",
-    "comercial": "crm",
-    "erp": "odoo",
-    "informes": "dashboard",
-    "reporting": "dashboard",
-    "cotizaciones": "presupuestos",
+# normaliza urgencia a uno de los tres valores admitidos
+# si no reconoce el valor devuelve "media" por defecto
+def normalize_urgency(value: str) -> str:
+    normalized = str(value).lower().strip()
+    return URGENCY_SYNONYMS.get(normalized, "media")
+
+
+# sinónimos para clasificar el tipo de solicitud
+TICKET_TYPE_SYNONYMS = {
+    # presupuesto
+    "presupuesto": "budget",
+    "cotizacion": "budget",
+    "cotización": "budget",
+    "precio": "budget",
+    "propuesta": "budget",
+    "budget": "budget",
+
+    # incidencia
+    "incidencia": "issue",
+    "problema": "issue",
+    "error": "issue",
+    "soporte": "issue",
+    "bug": "issue",
+    "issue": "issue",
+
+    # descarte
+    "descartar": "discard",
+    "spam": "discard",
+    "irrelevante": "discard",
+    "discard": "discard",
 }
 
 
-def normalize_requirement(requirement: str) -> str:
-    value = str(requirement).lower().strip()
-    return REQUIREMENT_SYNONYMS.get(value, value)
-
-
-def map_requirements_to_products(requirements: list[str]) -> list[str]:
-    products: list[str] = []
-
-    for req in requirements:
-        normalized = normalize_requirement(req)
-        code = REQUIREMENT_TO_PRODUCT.get(normalized)
-
-        if code and code not in products:
-            products.append(code)
-
-    return products
+# normaliza tipo de ticket a: budget | issue | discard
+# si no reconoce el valor devuelve "discard" por seguridad
+def normalize_ticket_type(value: str) -> str:
+    normalized = str(value).lower().strip()
+    return TICKET_TYPE_SYNONYMS.get(normalized, "discard")
