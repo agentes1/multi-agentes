@@ -4,7 +4,7 @@ from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 MODULES = ['base', 'sale_management', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive']
 
 PRODUCTS = [
-    {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm_base", "type": "service"},
+    {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm", "type": "service"},
     {"name": "Clasificación de emails con IA", "list_price": 1800, "description": "Clasificación automática de correos y sugerencia de respuesta", "default_code": "email_ai", "type": "service"},
     {"name": "Generación de presupuestos con IA", "list_price": 2200, "description": "Creación asistida de presupuestos a partir de formularios o emails", "default_code": "quotation_ai", "type": "service"},
     {"name": "Conector con Odoo", "list_price": 1500, "description": "Integración con Odoo para clientes, oportunidades y presupuestos", "default_code": "odoo_connector", "type": "service"},

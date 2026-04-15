@@ -1,5 +1,5 @@
 import time
-from odoo_integration.odoo_api_wrapper import OdooAPIWrapper
+from odoo.api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 
 def setup_helpdesk():
