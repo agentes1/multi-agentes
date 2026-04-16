@@ -15,6 +15,7 @@ class MockLLMValid:
                 \"project_summary\": \"Necesitan CRM y facturación\",
                 \"requirements\": [\"crm\", \"presupuestos\"],
                 \"urgency\": \"alta\",
+                \"ticket_type\": \"budget\",
                 \"missing_information\": []
             }"""
 
@@ -63,9 +64,32 @@ class MockMCPService:
         }
 
 
+class MockOdooService:
+    def create_helpdesk_ticket(self, **kwargs):
+        return 1
+
+    def get_helpdesk_ticket(self, ticket_id):
+        return {"id": ticket_id}
+
+    def get_team_id_by_name(self, name):
+        return 1
+
+    def get_ticket_type_id_by_name(self, name):
+        return 1
+
+    def get_category_id_by_name(self, name):
+        return 1
+
+    def get_tag_ids_by_names(self, names):
+        return []
+
+    def get_motive_id_by_name_and_team(self, name, team_id):
+        return None
+
+
 def _build_intake_deps(model: str | None = None) -> IntakeDependencies:
     _ = model
-    return IntakeDependencies(llm=MockLLMValid())
+    return IntakeDependencies(llm=MockLLMValid(), odoo_service=MockOdooService())
 
 
 def _build_budget_deps(model: str | None = None) -> BudgetDependencies:
