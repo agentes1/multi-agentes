@@ -31,9 +31,14 @@ async def run_pipeline(source_input: dict, thread_id: str | None, model: str | N
     if budget_result.get("error"):
         return {"ok": False, "error": budget_result["error"]}
 
+    quote_result = budget_result.get("quote_summary", {})
+    company = quote_result.get("company_name", "el cliente")
+    total = quote_result.get("total", 0)
+    sale_id = quote_result.get("sale_order_id", "")
+
     return {
         "ok": True,
         "normalized_request": intake_result["normalized_request"],
-        "quote_result": budget_result["quote_result"],
-        "final_text": budget_result["final_text"],
+        "quote_result": quote_result,
+        "final_text": f"Presupuesto creado para {company}. Total: {total} EUR. ID Odoo: {sale_id}.",
     }

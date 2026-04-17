@@ -1,4 +1,5 @@
 import json
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -116,8 +117,12 @@ Texto del cliente:
     response = await deps.llm.ainvoke([HumanMessage(content=prompt)])
     content = response.content if isinstance(response.content, str) else str(response.content)
 
+    # algunos modelos envuelven el JSON en bloques markdown o añaden texto previo
+    json_match = re.search(r"\{.*\}", content, re.DOTALL)
+    raw_json = json_match.group(0) if json_match else content
+
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(raw_json)
     except Exception:
         return {
             "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
