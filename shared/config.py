@@ -1,18 +1,19 @@
 from dotenv import load_dotenv
+import os
 load_dotenv()
 
 #/CREDENCIALES MCP SERVER DE ODOO/
-URL = get_env_variable("URL")
-DB = get_env_variable("DB")
-USERNAME = get_env_variable("USERNAME")
-PASSWORD = get_env_variable("PASSWORD")
+URL = os.getenv("URL")
+DB = os.getenv("DB")
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
 
 #/VARIABLES DE llm.py/
-OLLAMA_MODEL = get_env_variable("OLLAMA_MODEL")
-OLLAMA_TEMPERATURE = get_env_variable("OLLAMA_TEMPERATURE")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
+OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 
 #/CREDEMCIALES ODOO/
-ODOO_BASE_URL = get_env_variable("ODOO_BASE_URL")
-ODOO_DB = get_env_variable("ODOO_DB")
-ODOO_USERNAME = get_env_variable("ODOO_USERNAME")
-ODOO_PASSWORD = get_env_variable("ODOO_PASSWORD")
+ODOO_BASE_URL = os.getenv("ODOO_BASE_URL")
+ODOO_DB = os.getenv("ODOO_DB")
+ODOO_USERNAME = os.getenv("ODOO_USERNAME")
+ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
