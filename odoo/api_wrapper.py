@@ -1,21 +1,18 @@
 import xmlrpc.client
+from xmlrpc.client import Fault
+from odoo.helpers import Table
+from sys import stderr
+from typing import Any
 
-# Usage Examples can be found in tests.test_odoo_api_wrapper
-# Credentials can be found in shared/config
 
 class OdooAPIWrapper:
     def __init__(self, url, username, password, db):
-        self._url = url if 'xmlrpc/2' in url else self._format(url)
+        self._url = url 
         self._username = username
         self._password = password
         self._db = db
         self._uid = self._login()
         self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
-
-    def _format(self, url):
-        pieces = url.split(':')
-        pieces[2] = pieces[2][:4] # just the port
-        return f'{':'.join(pieces[:3])}/xmlrpc/2'
 
     def _login(self):
         common = xmlrpc.client.ServerProxy(f'{self._url}/common')
@@ -23,202 +20,56 @@ class OdooAPIWrapper:
         if not uid: raise RuntimeError('URL was correct, but credentials were wrong, don\'t give up ur close!')
         return uid
 
+    # https://www.odoo.com/documentation/18.0/developer/reference/external_api.html#read-records
+    def _query(self, model, method, args = None, kwargs = None):
+        args = args or []
+        kwargs = kwargs or {}
+        return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args, kwargs)
+
     def get_dbs(self):
         try:
             client = xmlrpc.client.ServerProxy(f'{self._url}/db')
-            dbs = client.list()
-            print("Databases available in Odoo:", dbs)
+            return client.list()
         except Exception as e:
             print("Could not list DBs:", e)
 
-    def get_all(self, tablename, limit=100):
-        return self._models.execute_kw(self._db, self._uid, self._password, tablename, 'search_read', [], {'limit': limit})
+    def install(self, module: str): 
+        ids = self._query('ir.module.module', 'search', [[('name', '=', str(module))]])
+        res = self._query('ir.module.module', 'button_immediate_install', [ids])
+        return res if res else None
 
-    # Product (product.product) CRUD
-    def get_products(self, limit=10):
-        domain = [('active', '=', True)]
-        return self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'search_read', [domain], {'limit': limit})
+    def get_all(self, table: Table, fields: list[str] = [], limit=1000) -> list[dict] | None:
+        results = self._query(table, 'search_read', [], { 'fields': fields, 'limit': limit })
+        return results if results else None
 
-    def create_product(self, data):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'create', [data])
+    def get_by_id(self, table: Table, ids: list[int], fields: list[str] = []) -> list[dict] | None:
+        results = self._query(table, 'read', [ids], { 'fields': fields })
+        return results if results else None
 
-    def get_product(self, product_id):
-        result = self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'read', [[product_id]])
-        return result[0] if result else None
+    def get_by_value(self, table: Table, criteria: dict[str, Any], fields: list[str] = [], limit=1000) -> list[dict] | None:
+        domain = [ (field, '=', value) for field,value in criteria.items() ]
+        results = self._query(table, 'search_read', [domain], { 'fields': fields, 'limit': limit })
+        return results if results else None
 
-    def update_product(self, product_id, data):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'write', [[product_id], data])
+    def update(self, table: Table, ids: list[int], new_data: dict):
+        res = self._query(table, 'write', [ids, new_data])
+        return res if res else None
 
-    def delete_product(self, product_id):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'product.product', 'unlink', [[product_id]])
+    def create(self, table: Table, rows: list[dict]):
+        ids = self._query(table, 'create', [rows])
+        return ids if ids else None
 
-    # Contact (res.partner) CRUD
-    def get_contacts(self, limit=10):
-        domain = [('active', '=', True)]
-        return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'search_read', [domain], {'limit': limit})
-
-    def create_contact(self, data):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'create', [data])
-
-    def get_contact(self, contact_id):
-        result = self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'read', [[contact_id]])
-        return result[0] if result else None
-
-    def update_contact(self, contact_id, data):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'write', [[contact_id], data])
-
-    def delete_contact(self, contact_id):
-        return self._models.execute_kw(self._db, self._uid, self._password, 'res.partner', 'unlink', [[contact_id]])
-
-    # miscellaneous
-    def install_module(self, module_name):
-        module_ids = self.search('ir.module.module', [('name', '=', module_name)])
-        if module_ids:
-            return self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'button_immediate_install', [module_ids])
+    def delete(self, table: Table, ids: list[int]):
+        try: return self._query(table, 'unlink', [ids])
+        except Fault as f: print(f.faultString, file=stderr)
         return False
 
-    def search(self, model, domain, limit=100):
-        """Returns a list of IDs for records matching the domain."""
-        return self._models.execute_kw(self._db, self._uid, self._password, model, 'search', [domain], {'limit': limit})
+    def archive(self, table: Table, ids: list[int]) -> bool:
+        try: return self._query(table, 'write', [ids, {'active': False}]) # unactive rows aren't shown in the UI
+        except Fault as f: print(f.faultString, file=stderr)
+        return False
 
-    def search_read(self, model, domain, fields=None, limit=100):
-        """Returns a list of records matching the domain with specific fields."""
-        params = {'limit': limit}
-        if fields:
-            params['fields'] = fields
-        return self._models.execute_kw(self._db, self._uid, self._password, model, 'search_read', [domain], params)
-
-    def drop_model(self, model):
-        batch_limit = 1000
-        while True:
-            all_ids = self.search(model, [], limit=batch_limit)
-            if not all_ids: break
-            self._models.execute_kw(self._db, self._uid, self._password, model, 'unlink', [[all_ids]])
-        return True
-
-
-# helpers helpdesk
-    # obtiene el id de un equipo por nombre exacto
-    def get_team_id_by_name(self, team_name):
-        team_ids = self.search(
-            'helpdesk.ticket.team',
-            [('name', '=', team_name)],
-            limit=1,
-        )
-        return team_ids[0] if team_ids else None
-
-    # obtiene el id de un tipo de ticket por nombre exacto
-    def get_ticket_type_id_by_name(self, type_name):
-        type_ids = self.search(
-            'helpdesk.ticket.type',
-            [('name', '=', type_name)],
-            limit=1,
-        )
-        return type_ids[0] if type_ids else None
-
-    # obtiene el id de una categoría por nombre exacto
-    def get_category_id_by_name(self, category_name):
-        category_ids = self.search(
-            'helpdesk.ticket.category',
-            [('name', '=', category_name)],
-            limit=1,
-        )
-        return category_ids[0] if category_ids else None
-
-    # obtiene los ids de las etiquetas que existan en Odoo
-    # si una etiqueta no existe simplemente no se devuelve
-    def get_tag_ids_by_names(self, tag_names):
-        if not tag_names:
-            return []
-
-        return self.search(
-            'helpdesk.ticket.tag',
-            [('name', 'in', tag_names)],
-            limit=100,
-        )
-
-    # obtiene el motivo si existe y pertenece al equipo indicado
-    # se deja como helper opcional porque todavía no has definido motivos
-    def get_motive_id_by_name_and_team(self, motive_name, team_id):
-        motive_ids = self.search(
-            'helpdesk.ticket.motive',
-            [('name', '=', motive_name), ('team_id', '=', team_id)],
-            limit=1,
-        )
-        return motive_ids[0] if motive_ids else None
-
-    # crea un ticket real en el modelo helpdesk.ticket
-    # se mantiene simple: solo campos necesarios para tu flujo local
-    def create_helpdesk_ticket(
-        self,
-        title,
-        description,
-        team_id,
-        priority="1",
-        type_id=None,
-        category_id=None,
-        tag_ids=None,
-        motive_id=None,
-    ):
-        vals = {
-            'name': title,
-            'description': description,
-            'team_id': team_id,
-            'priority': priority,
-        }
-
-        # campos opcionales: solo se añaden si existen
-        if type_id:
-            vals['type_id'] = type_id
-
-        if category_id:
-            vals['category_id'] = category_id
-
-        if motive_id:
-            vals['motive_id'] = motive_id
-
-        # relación many2many con etiquetas
-        if tag_ids:
-            vals['tag_ids'] = [(6, 0, tag_ids)]
-
-        return self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            'helpdesk.ticket',
-            'create',
-            [vals],
-        )
-    
-    def get_helpdesk_ticket(self, ticket_id):
-        result = self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "helpdesk.ticket",
-            "read",
-            [[ticket_id]],
-        )
-        return result[0] if result else None
-    
-    def get_helpdesk_tickets(self, limit: int = 100):
-        ids = self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "helpdesk.ticket",
-            "search",
-            [[]],
-            {"limit": limit},
-        )
-        if not ids:
-            return []
-
-        return self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "helpdesk.ticket",
-            "read",
-            [ids],
-        )
+    def unarchive(self, table: Table, ids: list[int]) -> bool:
+        try: return self._query(table, 'write', [ids, {'active': True}]) 
+        except Fault as f: print(f.faultString, file=stderr)
+        return False

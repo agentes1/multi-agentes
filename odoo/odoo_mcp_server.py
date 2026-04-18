@@ -1,32 +1,23 @@
-import xmlrpc.client
 from typing import Any
 from mcp.server.fastmcp import FastMCP
+from shared.config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
+from odoo.api_wrapper_2 import OdooAPIWrapper
+from odoo.enums import Table
 
 mcp = FastMCP("odoo_precios_reales")
 
-URL = "http://localhost:8069"
-DB = "odoo"
-USERNAME = "admin"
-PASSWORD = "admin"
-
-def _get_odoo_connection():
-    common = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/common')
-    uid = common.authenticate(DB, USERNAME, PASSWORD, {})
-    if not uid:
-        raise Exception("Odoo authentication failed")
-    models = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/object')
-    return uid, models
-
-def execute(*args, **kwargs):
-    uid, models = _get_odoo_connection()
-    return models.execute_kw(DB, uid, PASSWORD, *args, **kwargs)
+# Initialize the wrapper
+odoo = OdooAPIWrapper(ODOO_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
 
 @mcp.tool()
 def list_catalog() -> dict[str, Any]:
     """Devuelve el catálogo completo de módulos presupuestables desde Odoo."""
-    domain = [('default_code', 'in', ['crm_base', 'email_ai', 'quotation_ai', 'odoo_connector', 'dashboard'])]
+    criteria = {'default_code': ['crm_base', 'email_ai', 'quotation_ai', 'odoo_connector', 'dashboard']}
+    # Note: get_by_value uses '=', we might need to adjust for 'in' operator or use search directly
+    # For now, let's use search_read via a direct query or helper
+    domain = [('default_code', 'in', criteria['default_code'])]
     fields = ['name', 'list_price', 'description', 'default_code']
-    records = execute('product.product', 'search_read', [domain], {'fields': fields})
+    records = odoo._query(Table.Product, 'search_read', [domain], {'fields': fields})
     
     catalogo = {}
     for r in records:
@@ -49,10 +40,10 @@ def get_product(product_code: str) -> dict[str, Any]:
 @mcp.tool()
 def get_customer_profile(company_name: str) -> dict[str, Any]:
     """Devuelve información comercial básica del cliente desde Odoo."""
+    # Use ilike for case-insensitive search
     domain = [('name', '=ilike', company_name)]
-    records = execute('res.partner', 'search_read', [domain], {'fields': ['name', 'is_company'], 'limit': 1})
+    records = odoo._query(Table.Contact, 'search_read', [domain], {'fields': ['name', 'is_company'], 'limit': 1})
     
-    # Defaults just like the mock
     profile = {"segment": "desconocido", "discount_pct": 0, "currency": "EUR"}
     
     if records:
@@ -74,12 +65,11 @@ def calculate_quote(product_codes: list[str], company_name: str) -> dict[str, An
     customer = get_customer_profile(company_name)
     
     # 1. Ensure customer exists or find them
-    domain = [('name', '=ilike', company_name)]
-    partner_ids = execute('res.partner', 'search', [domain], {'limit': 1})
-    if not partner_ids:
-        partner_id = execute('res.partner', 'create', [{'name': company_name, 'is_company': True}])
+    records = odoo.get_by_value(Table.Contact, {'name': company_name}, limit=1)
+    if not records:
+        partner_id = odoo.create(Table.Contact, {'name': company_name, 'is_company': True})
     else:
-        partner_id = partner_ids[0]
+        partner_id = records[0]['id']
 
     # 2. Build order lines
     order_lines = []
@@ -87,7 +77,7 @@ def calculate_quote(product_codes: list[str], company_name: str) -> dict[str, An
     subtotal = 0
 
     for code in product_codes:
-        p_records = execute('product.product', 'search_read', [[('default_code', '=', code)]], {'fields': ['id', 'name', 'list_price'], 'limit': 1})
+        p_records = odoo.get_by_value(Table.Product, {'default_code': code}, fields=['id', 'name', 'list_price'], limit=1)
         if not p_records:
             continue
         p = p_records[0]
@@ -95,8 +85,7 @@ def calculate_quote(product_codes: list[str], company_name: str) -> dict[str, An
         # apply discount
         discount = customer.get('discount_pct', 0.0)
         
-        # Add to Odoo sale order lines
-        # command 0 is to create a new record
+        # Add to Odoo sale order lines (0, 0, vals) is the create command for one-to-many
         order_lines.append((0, 0, {
             'product_id': p['id'],
             'product_uom_qty': 1,
@@ -117,7 +106,8 @@ def calculate_quote(product_codes: list[str], company_name: str) -> dict[str, An
 
     # Create the sale order in Odoo
     if order_lines:
-        so_id = execute('sale.order', 'create', [{
+        # Note: 'sale.order' isn't in Table enum yet, but _query handles strings too
+        so_id = odoo._query('sale.order', 'create', [{
             'partner_id': partner_id,
             'order_line': order_lines
         }])
