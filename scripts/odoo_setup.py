@@ -2,7 +2,6 @@ from odoo.api_wrapper import OdooAPIWrapper
 from odoo.helpers import Table 
 from dotenv import load_dotenv
 from os import getenv
-from tqdm import tqdm
 from halo import Halo
 
 # MODULES = ['base', 'sale_management', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive']
@@ -32,15 +31,13 @@ if __name__ == "__main__":
     load_dotenv()
     odoo = OdooAPIWrapper(getenv('ODOO_BASE_URL'), getenv('ODOO_USERNAME'), getenv('ODOO_PASSWORD'), getenv('ODOO_DB'))
 
-    spinner = Halo(text='Installing Odoo Modules...', spinner='dots').start()
-    # for m in tqdm(MODULES, desc='Installing Odoo Modules'):
-    for i, m in enumerate(MODULES):
-        spinner.text = f'{i}/{len(MODULES)} Installing {m}'
-        odoo.install(m) 
-    spinner.succeed("Modules Installed")
+    with Halo(text="Installing modules", spinner="dots") as spinner:
+        for i, m in enumerate(MODULES):
+            spinner.text = f"{i}/{len(MODULES)} Installing {m}"
+            odoo.install(m) 
+        spinner.succeed("Modules Installed")
 
-    # with tqdm(total=7, desc="Populating Odoo DB") as pbar:
-    with Halo(spinner='dots') as spinner:
+    with Halo(text="Populating Odoo DB...", spinner='dots') as spinner:
 
         spinner.text = 'Populating Products'
         for p in PRODUCTS:
