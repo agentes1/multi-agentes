@@ -1,15 +1,18 @@
-from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
-THIS_FILE = Path(__file__).resolve()
-PROJECT_ROOT = THIS_FILE.parent.parent
+#/CREDENCIALES MCP SERVER DE ODOO/
+URL = get_env_variable("URL")
+DB = get_env_variable("DB")
+USERNAME = get_env_variable("USERNAME")
+PASSWORD = get_env_variable("PASSWORD")
 
-MCP_SERVER_PATH = PROJECT_ROOT / "mcp" / "mcp_servidor_precios.py"
-MEMORY_FILE_PATH = PROJECT_ROOT / "memory_data" / "quote_memory.json"
+#/VARIABLES DE llm.py/
+OLLAMA_MODEL = get_env_variable("OLLAMA_MODEL")
+OLLAMA_TEMPERATURE = get_env_variable("OLLAMA_TEMPERATURE")
 
-OLLAMA_MODEL = "qwen3:4b"
-OLLAMA_TEMPERATURE = 0
-
-ODOO_BASE_URL = 'http://localhost:8069/xmlrpc/2'
-ODOO_DB = 'odoo'
-ODOO_USERNAME = 'odoo'
-ODOO_PASSWORD = 'multi-agente-agentes1'
+#/CREDEMCIALES ODOO/
+ODOO_BASE_URL = get_env_variable("ODOO_BASE_URL")
+ODOO_DB = get_env_variable("ODOO_DB")
+ODOO_USERNAME = get_env_variable("ODOO_USERNAME")
+ODOO_PASSWORD = get_env_variable("ODOO_PASSWORD")
