@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from agents.intake_agent.dependencies import IntakeDependencies
 from agents.intake_agent.state import IntakeState
-from shared.catalog import normalize_requirement
+from shared.catalog import normalize_urgency, normalize_ticket_type
 
 
 # helper para obtener dependencias inyectadas desde el config del grafo
@@ -14,6 +14,7 @@ def _get_deps(config: RunnableConfig) -> IntakeDependencies:
     if deps is None:
         raise RuntimeError("IntakeDependencies no inyectadas en config")
     return deps
+
 
 
 # convierte diferentes formatos de entrada (email, chat, etc) a texto uniforme
@@ -84,14 +85,14 @@ async def extract_request_node(state: IntakeState, config: RunnableConfig) -> di
     extracted_text = state["extracted_text"]
 
     prompt = f"""
-Eres un agente que analiza mensajes de clientes y los transforma en solicitudes estructuradas para crear tickets en Odoo.
+Eres un agente que analiza mensajes de clientes y los transforma en solicitudes estructuradas para procesarlas después.
 
 Debes devolver un JSON válido con esta estructura exacta:
 {{
   "company_name": "string",
   "project_summary": "string",
-  "requirements": ["crm", "emails", "presupuestos", "odoo", "dashboard"],
-  "urgency": "baja|media|alta",
+  "requirements": ["string"],
+  "urgency": "string",
   "ticket_type": "budget|issue|discard",
   "missing_information": []
 }}
@@ -102,9 +103,8 @@ Significado de ticket_type:
 - "discard": el mensaje no contiene una petición útil o clara
 
 Reglas:
-- Solo puedes usar esos valores de requirements si aplican claramente
 - No inventes datos
-- Si el nombre de empresa no aparece claro, usa "Desconocido"
+- Conserva los requisitos tal como los identifiques semánticamente
 - Si falta información relevante, añádelo en missing_information
 - Si no hay una necesidad clara, usa ticket_type = "discard"
 - Devuelve solo JSON válido, sin explicaciones
@@ -137,25 +137,15 @@ Texto del cliente:
             "error": "El JSON generado no contiene todos los campos obligatorios.",
         }
 
-    # normaliza requisitos usando catálogo compartido para evitar sinónimos
-    normalized_requirements = []
-    for req in parsed.get("requirements", []):
-        value = normalize_requirement(req)
-        if value and value not in normalized_requirements:
-            normalized_requirements.append(value)
+    # normaliza urgencia a valores cerrados
+    parsed["urgency"] = normalize_urgency(parsed.get("urgency", ""))
 
-    parsed["requirements"] = normalized_requirements
+    # normaliza tipo de ticket a valores cerrados
+    parsed["ticket_type"] = normalize_ticket_type(parsed.get("ticket_type", ""))
 
-    # normalización básica de valores categóricos
-    if parsed.get("urgency") not in {"baja", "media", "alta"}:
-        parsed["urgency"] = "media"
-
-    if parsed.get("ticket_type") not in {"budget", "issue", "discard"}:
-        parsed["ticket_type"] = "discard"
-
-    # limpieza mínima para evitar campos vacíos raros
-    if not parsed.get("company_name"):
-        parsed["company_name"] = "Desconocido"
+    # limpieza mínima para evitar estructuras inesperadas
+    if not isinstance(parsed.get("requirements"), list):
+        parsed["requirements"] = []
 
     if not isinstance(parsed.get("missing_information"), list):
         parsed["missing_information"] = []
@@ -165,7 +155,7 @@ Texto del cliente:
             AIMessage(
                 content=(
                     f"Solicitud estructurada generada para {parsed['company_name']} "
-                    f"con tipo {parsed['ticket_type']}"
+                    f"con tipo {parsed['ticket_type']} y urgencia {parsed['urgency']}"
                 )
             )
         ],
@@ -173,7 +163,6 @@ Texto del cliente:
         "ticket_type": parsed["ticket_type"],
         "error": None,
     }
-
 
 # prepara los datos del ticket según la solicitud estructurada
 # aquí ya se hace el mapeo directo a los valores que existen realmente en tu Odoo local
@@ -214,7 +203,7 @@ async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dic
         tag_names = ["Pendiente validación"]
 
     # mapeo de urgencia a prioridad real del módulo helpdesk_mgmt
-    # 0 = baja, 1 = media, 2 = alta, 3 = muy alta
+    # 0 = baja, 1 = media, 2 = alta
     urgency_to_priority = {
         "baja": "0",
         "media": "1",
@@ -247,6 +236,7 @@ async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dic
         description_lines.append("Faltan datos:")
         description_lines.extend([f"- {note}" for note in missing_information[:3]])
 
+
     ticket_payload = {
         "title": project_summary,
         "description": "\n".join(description_lines),
@@ -255,7 +245,6 @@ async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dic
         "type_name": type_name,
         "category_name": category_name,
         "tag_names": tag_names,
-        # se deja opcional porque no has indicado motivos creados en Odoo
         "motive_name": None,
     }
 
@@ -277,38 +266,62 @@ async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict
 
     ticket_payload = state["ticket_payload"]
     ticket_type = state["ticket_type"]
+    warnings = []
 
     try:
-        # resolver equipo
+        # resolver equipo; si no existe usamos uno por defecto
         team_id = deps.odoo_service.get_team_id_by_name(ticket_payload["team_name"])
         if not team_id:
-            raise ValueError(f"No existe el equipo '{ticket_payload['team_name']}' en Odoo")
+            warnings.append(
+                f"No existe el equipo '{ticket_payload['team_name']}' en Odoo. Se usará el equipo por defecto."
+            )
+            team_id = deps.odoo_service.get_team_id_by_name("Soporte cliente")
 
-        # resolver tipo de ticket
+        if not team_id:
+            raise ValueError("No existe tampoco el equipo por defecto 'Soporte cliente' en Odoo")
+
+        # resolver tipo de ticket; si no existe se omite
         type_id = deps.odoo_service.get_ticket_type_id_by_name(ticket_payload["type_name"])
         if not type_id:
-            raise ValueError(f"No existe el tipo de ticket '{ticket_payload['type_name']}' en Odoo")
+            warnings.append(
+                f"No existe el tipo de ticket '{ticket_payload['type_name']}' en Odoo. Se creará sin tipo."
+            )
+            type_id = None
 
-        # resolver categoría
+        # resolver categoría; si no existe se omite
         category_id = deps.odoo_service.get_category_id_by_name(ticket_payload["category_name"])
         if not category_id:
-            raise ValueError(f"No existe la categoría '{ticket_payload['category_name']}' en Odoo")
+            warnings.append(
+                f"No existe la categoría '{ticket_payload['category_name']}' en Odoo. Se creará sin categoría."
+            )
+            category_id = None
 
         # resolver etiquetas; si alguna no existe simplemente no se añade
         tag_ids = deps.odoo_service.get_tag_ids_by_names(ticket_payload["tag_names"])
+        if ticket_payload.get("tag_names") and not tag_ids:
+            warnings.append("No se pudo resolver ninguna de las etiquetas indicadas.")
 
-        # resolver motivo solo si se ha informado
+        # resolver motivo solo si se ha informado; si no existe se omite
         motive_id = None
         if ticket_payload.get("motive_name"):
             motive_id = deps.odoo_service.get_motive_id_by_name_and_team(
                 ticket_payload["motive_name"],
                 team_id,
             )
+            if not motive_id:
+                warnings.append(
+                    f"No existe el motivo '{ticket_payload['motive_name']}' para el equipo seleccionado. Se creará sin motivo."
+                )
+
+        # ampliar descripción con warnings si los hay
+        description = ticket_payload["description"]
+        if warnings:
+            description += "\n\n---\nObservaciones automáticas:\n- " + "\n- ".join(warnings)
 
         # crear ticket real en helpdesk.ticket
         ticket_id = deps.odoo_service.create_helpdesk_ticket(
             title=ticket_payload["title"],
-            description=ticket_payload["description"],
+            description=description,
             team_id=team_id,
             priority=ticket_payload["priority"],
             type_id=type_id,
@@ -331,6 +344,7 @@ async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict
             f"Ticket creado correctamente en Odoo con id {ticket_id} "
             f"y tipo {ticket_type}."
         ),
+        "warnings": warnings,
         "error": None,
     }
 
