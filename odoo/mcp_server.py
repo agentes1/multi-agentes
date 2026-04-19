@@ -1,8 +1,8 @@
 from typing import Any
 from mcp.server.fastmcp import FastMCP
 from shared.config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
-from odoo.api_wrapper_2 import OdooAPIWrapper
-from odoo.enums import Table
+from odoo.api import OdooAPIWrapper
+from odoo.helpers import Table
 
 mcp = FastMCP("odoo_precios_reales")
 
