@@ -1,115 +1,211 @@
-# tests/test_budget_agent_errors.py
+import uuid
+
 import pytest
 
 from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.graph import build_budget_graph
-
-# --- mocks ---
-
-
-class MockLLM:
-    async def ainvoke(self, messages):
-        class Response:
-            content = "Presupuesto de prueba generado."
-
-        return Response()
+from odoo.api_wrapper import OdooAPIWrapper
+from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
 
-class MockMemoryStore:
-    def get_last_quote_memory(self, company_name):
-        # devuelve objeto mínimo con los campos que usa retrieve_memory_node
-        class Memory:
-            quote_count = 0
-            last_quote_total = 0.0
-
-            def model_dump(self):
-                return {"quote_count": 0, "last_quote_total": 0.0}
-
-        return Memory()
-
-    def append_quote(self, item):
-        pass
-
-    def now_iso(self):
-        return "2025-01-01T00:00:00"
-
-
-class MockMCPService:
-    async def get_budget_context(self, company_name, product_codes):
-        return {
-            "customer_profile": {"name": company_name, "discount": 0},
-            "quote": {
-                "company_name": company_name,
-                "lines": [],
-                "subtotal": 0.0,
-                "discount_amount": 0.0,
-                "total": 0.0,
-                "currency": "EUR",
-                "warnings": [],
-            },
-        }
-
-
-class MockMCPServiceFailing:
-    # simula un MCP que lanza excepción
-    async def get_budget_context(self, company_name, product_codes):
-        raise ConnectionError("Servicio MCP no disponible")
-
-
-def _build_deps(mcp_service=None) -> BudgetDependencies:
+def _build_deps() -> BudgetDependencies:
     return BudgetDependencies(
-        llm=MockLLM(),
-        memory_store=MockMemoryStore(),
-        mcp_service=mcp_service or MockMCPService(),
+        odoo_wrapper=OdooAPIWrapper(
+            url=ODOO_BASE_URL,
+            username=ODOO_USERNAME,
+            password=ODOO_PASSWORD,
+            db=ODOO_DB,
+        ),
     )
 
 
 def _base_config(deps: BudgetDependencies) -> dict:
-    # thread_id requerido por InMemorySaver para identificar la sesión
-    return {"configurable": {"deps": deps, "thread_id": "test-thread"}}
+    return {
+        "configurable": {
+            "deps": deps,
+            "thread_id": f"test-budget-agent-{uuid.uuid4()}",
+        }
+    }
 
 
-# --- tests ---
-
-
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_error_cuando_requirements_vacio():
-    """Si normalized_request no tiene requirements, el grafo debe terminar con error."""
+async def test_json_crea_presupuesto_real_en_odoo():
     graph = build_budget_graph()
     deps = _build_deps()
 
     result = await graph.ainvoke(
         {
             "normalized_request": {
-                "company_name": "Empresa Test",
-                "requirements": [],  # vacío → debe fallar en prepare_budget_node
+                "company_name": "Acme Presupuestos SL",
+                "project_summary": "Implantación básica para soporte y ventas",
+                "requirements": ["helpdesk", "crm"],
+                "urgency": "media",
             }
         },
         config=_base_config(deps),
     )
 
-    assert result["error"] is not None
-    assert "requisitos" in result["error"].lower()
-    assert result["final_text"].startswith("Error:")
+    sale_order_id = result.get("sale_order_id")
+
+    try:
+        assert result["error"] is None
+        assert sale_order_id is not None
+        assert isinstance(sale_order_id, int)
+
+        assert result["normalized_request"]["company_name"] == "Acme Presupuestos SL"
+        assert "helpdesk" in result["normalized_request"]["requirements"]
+        assert "crm" in result["normalized_request"]["requirements"]
+
+        assert isinstance(result["selected_products"][0], dict)
+        assert "id" in result["selected_products"][0]
+
+        summary = result["quote_summary"]
+        assert summary["company_name"] == "Acme Presupuestos SL"
+        assert summary["sale_order_id"] == sale_order_id
+        assert isinstance(summary["subtotal"], float)
+        assert isinstance(summary["total"], float)
+        assert summary["currency"] == "EUR"
+
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+        assert order["partner_id"]
+        assert order["amount_total"] >= 0
+
+    finally:
+        if sale_order_id:
+            print("fin")
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_error_cuando_mcp_falla():
-    """Si el servicio MCP lanza excepción, el grafo debe terminar con error."""
+async def test_json_con_varios_requisitos_crea_presupuesto_en_odoo():
     graph = build_budget_graph()
-    # inyectamos el MCP que falla y un catálogo que sí devuelve productos
-    deps = _build_deps(mcp_service=MockMCPServiceFailing())
+    deps = _build_deps()
 
     result = await graph.ainvoke(
         {
             "normalized_request": {
-                "company_name": "Empresa Test",
-                "requirements": ["crm", "facturacion"],  # requisitos válidos
+                "company_name": "Beta Industrial SL",
+                "project_summary": "Proyecto con varias áreas funcionales",
+                "requirements": ["crm", "sales", "helpdesk"],
+                "urgency": "alta",
+            }
+        },
+        config=_base_config(deps),
+    )
+
+    sale_order_id = result.get("sale_order_id")
+
+    try:
+        assert result["error"] is None
+        assert sale_order_id is not None
+
+        selected_products = result["selected_products"]
+        assert isinstance(selected_products, list)
+        assert len(selected_products) >= 1
+
+        summary = result["quote_summary"]
+        assert summary["sale_order_id"] == sale_order_id
+        assert summary["company_name"] == "Beta Industrial SL"
+        assert summary["total"] >= 0
+
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+
+    finally:
+        if sale_order_id:
+            print("fin")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_json_cliente_nuevo_crea_partner_y_presupuesto():
+    graph = build_budget_graph()
+    deps = _build_deps()
+
+    company_name = "Cliente Nuevo Presupuesto Test SL"
+
+    result = await graph.ainvoke(
+        {
+            "normalized_request": {
+                "company_name": company_name,
+                "project_summary": "Nueva implantación Odoo",
+                "requirements": ["crm"],
+                "urgency": "baja",
+            }
+        },
+        config=_base_config(deps),
+    )
+
+    sale_order_id = result.get("sale_order_id")
+
+    try:
+        assert result["error"] is None
+        assert sale_order_id is not None
+
+        partners = deps.odoo_wrapper.search_read(
+            "res.partner",
+            [("name", "=", company_name)],
+            fields=["id", "name"],
+            limit=10,
+        )
+
+        assert partners
+        assert any(p["name"] == company_name for p in partners)
+
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+
+    finally:
+        if sale_order_id:
+            print("fin")
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_json_sin_requisitos_devuelve_error_y_no_crea_presupuesto():
+    graph = build_budget_graph()
+    deps = _build_deps()
+
+    result = await graph.ainvoke(
+        {
+            "normalized_request": {
+                "company_name": "Empresa Sin Requisitos SL",
+                "project_summary": "Solicitud vacía",
+                "requirements": [],
+                "urgency": "media",
             }
         },
         config=_base_config(deps),
     )
 
     assert result["error"] is not None
-    assert "mcp" in result["error"].lower()
-    assert result["final_text"].startswith("Error:")
+    assert "no contiene requisitos" in result["error"].lower()
+    assert result.get("sale_order_id") is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_json_con_requisitos_no_mapeables_devuelve_error():
+    graph = build_budget_graph()
+    deps = _build_deps()
+
+    result = await graph.ainvoke(
+        {
+            "normalized_request": {
+                "company_name": "Empresa Requisitos Raros SL",
+                "project_summary": "Caso de requisitos desconocidos",
+                "requirements": ["bloquechain_cuantica", "modulo_imposible"],
+                "urgency": "alta",
+            }
+        },
+        config=_base_config(deps),
+    )
+
+    assert result["error"] is not None
+    assert "no se encontraron productos presupuestables" in result["error"].lower()
+    assert result.get("sale_order_id") is None
