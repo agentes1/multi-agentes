@@ -4,7 +4,7 @@ import pytest
 
 from agents.intake_agent.dependencies import IntakeDependencies
 from agents.intake_agent.graph import build_intake_graph
-from odoo.api_wrapper import OdooAPIWrapper
+from odoo.api import OdooAPIWrapper
 from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
 
 

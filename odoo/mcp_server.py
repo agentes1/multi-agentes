@@ -1,13 +1,13 @@
 from typing import Any
 from mcp.server.fastmcp import FastMCP
-from shared.config import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
+from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
 from odoo.api import OdooAPIWrapper
 from odoo.helpers import Table
 
 mcp = FastMCP("odoo_precios_reales")
 
 # Initialize the wrapper
-odoo = OdooAPIWrapper(ODOO_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
+odoo = OdooAPIWrapper(ODOO_BASE_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
 
 @mcp.tool()
 def list_catalog() -> dict[str, Any]:
