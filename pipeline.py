@@ -1,39 +1,60 @@
-# pipeline.py
-# orquestador principal: recibe un input crudo, lo pasa por los dos agentes en secuencia
-
-from agents.budget_agent.dependencies import build_dependencies as build_budget_deps
-from agents.budget_agent.graph import build_budget_graph
-from agents.intake_agent.dependencies import build_dependencies as build_intake_deps
-from agents.intake_agent.graph import build_intake_graph
+from agents.intake_agent.dependencies import build_ticket_dependencies
+from agents.intake_agent.graph import build_ticket_graph
 
 
-async def run_pipeline(source_input: dict, thread_id: str | None, model: str | None = None) -> dict:
-    # paso 1: intake_agent transforma la entrada cruda en solicitud normalizada
-    intake_result = await build_intake_graph().ainvoke(
-        {"source_input": source_input},
-        config={"configurable": {"deps": build_intake_deps(model=model)}},
-    )
+def build_ticket_agent():
+    graph = build_ticket_graph()
+    deps = build_ticket_dependencies()
+    return graph, deps
 
-    if intake_result.get("error"):
-        return {"ok": False, "error": intake_result["error"]}
 
-    # paso 2: budget_agent convierte la solicitud en presupuesto
-    budget_result = await build_budget_graph().ainvoke(
-        {"normalized_request": intake_result["normalized_request"]},
+async def run_ticket_pipeline(
+    email_subject: str,
+    email_body: str,
+    sender_email: str,
+    sender_name: str | None = None,
+    team_name: str | None = None,
+) -> dict:
+    """
+    Ejecuta el agente de tickets con un correo ya recibido/simulado.
+    """
+    graph, deps = build_ticket_agent()
+
+    initial_state = {
+        "email_subject": email_subject,
+        "email_body": email_body,
+        "sender_email": sender_email,
+        "sender_name": sender_name,
+        "team_name": team_name,
+    }
+
+    result = await graph.ainvoke(
+        initial_state,
         config={
             "configurable": {
-                "deps": build_budget_deps(model=model),
-                "thread_id": thread_id,  # requerido por InMemorySaver
+                "deps": deps,
+                "thread_id": "ticket-test-thread",
             }
         },
     )
+    return result
 
-    if budget_result.get("error"):
-        return {"ok": False, "error": budget_result["error"]}
 
-    return {
-        "ok": True,
-        "normalized_request": intake_result["normalized_request"],
-        "quote_result": budget_result["quote_result"],
-        "final_text": budget_result["final_text"],
-    }
+async def run_demo_ticket() -> dict:
+    """
+    Simula un correo de entrada para comprobar que todo funciona.
+    """
+    return await run_ticket_pipeline(
+        email_subject="No puedo acceder al portal de clientes",
+        email_body=(
+            "Hola,\n\n"
+            "Soy Ana López de Acme SL. Desde esta mañana no puedo iniciar sesión "
+            "en el portal. Me indica credenciales incorrectas aunque estoy usando "
+            "la misma contraseña de siempre.\n\n"
+            "¿Podéis revisarlo?\n\n"
+            "Gracias."
+        ),
+        sender_email="ana.lopez@acme.es",
+        sender_name="Ana López",
+        team_name="Support",
+    )

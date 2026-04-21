@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from odoo.api_wrapper import OdooAPIWrapper
+from odoo.api import OdooAPIWrapper
 
 
 # dependencias externas que necesita el agente

@@ -1,20 +1,30 @@
-# agents/intake_agent/dependencies.py
 from dataclasses import dataclass
+from typing import Any
 
-from odoo.api_wrapper import OdooAPIWrapper
-from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
 from shared.llm import get_llm
+from shared.config import (
+    ODOO_BASE_URL,
+    ODOO_DB,
+    ODOO_USERNAME,
+    ODOO_PASSWORD,
+)
+
+from odoo.api import OdooAPIWrapper
 
 
 @dataclass
-class IntakeDependencies:
-    llm: object
+class TicketAgentDependencies:
+    llm: Any
     odoo_service: OdooAPIWrapper
 
 
-def build_dependencies(model: str | None = None) -> IntakeDependencies:
-    return IntakeDependencies(
-        llm=get_llm(model=model),
+def build_ticket_dependencies() -> TicketAgentDependencies:
+    """
+    Construye todas las dependencias reales del agente.
+    """
+
+    return TicketAgentDependencies(
+        llm=get_llm(),
         odoo_service=OdooAPIWrapper(
             url=ODOO_BASE_URL,
             username=ODOO_USERNAME,
