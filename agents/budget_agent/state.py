@@ -3,13 +3,13 @@ from typing import Any, TypedDict
 from langchain_core.messages import BaseMessage
 
 
-# estado compartido del grafo
-# contiene la entrada normalizada, mensajes internos y resultado final
 class BudgetState(TypedDict, total=False):
     messages: list[BaseMessage]
 
     # json ya normalizado por el agente anterior
     normalized_request: dict[str, Any]
+    # contexto enriquecido por enrich_context_node via tool-calling (solo lectura)
+    odoo_context: dict[str, Any]
     # productos seleccionados a partir de los requisitos
     selected_products: list[str]
     # id del contacto/cliente en odoo
