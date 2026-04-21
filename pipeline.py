@@ -37,7 +37,15 @@ async def run_ticket_pipeline(
             }
         },
     )
-    return result
+    return {
+        "error": result.get("error"),
+        "normalized_ticket": result.get("normalized_ticket", {}),
+        "partner_id": result.get("partner_id"),
+        "debug_trace": result.get("debug_trace", {}),
+        "resolved_fields": result.get("resolved_fields", {}),
+        "ticket_vals": result.get("ticket_vals", {}),
+        "ticket_id": result.get("ticket_id"),
+    }
 
 
 async def run_demo_ticket() -> dict:
@@ -56,5 +64,5 @@ async def run_demo_ticket() -> dict:
         ),
         sender_email="ana.lopez@acme.es",
         sender_name="Ana López",
-        team_name="Support",
+        team_name="Soporte cliente",
     )

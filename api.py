@@ -1,14 +1,13 @@
 # api.py
-# servidor HTTP: expone el pipeline como endpoint REST
-# cada canal de entrada (email, chat, webhook) llama a POST /process
+# servidor HTTP: expone el pipeline de tickets como endpoint REST
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from pipeline import run_pipeline
+from pipeline import run_ticket_pipeline
 
-app = FastAPI(title="Multi-agente presupuestos")
+app = FastAPI(title="Multi-agente tickets")
 
 # permite llamadas desde herramientas externas y scripts locales
 app.add_middleware(
@@ -19,32 +18,37 @@ app.add_middleware(
 )
 
 
-# esquema de entrada: acepta cualquier canal (email, chat, etc)
+# esquema de entrada: representa un correo listo para procesar
 class ProcessRequest(BaseModel):
-    source_input: dict
-    thread_id: str | None = None  # opcional: para rastrear sesiones concretas
+    email_subject: str
+    email_body: str
+    sender_email: str
+    sender_name: str | None = None
+    team_name: str | None = None
 
 
-# esquema de respuesta para documentación automática en /docs
+# esquema de respuesta: refleja el estado real del pipeline actual
 class ProcessResponse(BaseModel):
-    ok: bool
-    thread_id: str | None = None
-    stage: str | None = None  # qué agente falló (solo si ok=False)
-    error: str | None = None  # mensaje de error (solo si ok=False)
-    validation_notes: list[str] = []  # avisos no bloqueantes del intake
-    normalized_request: dict = {}
-    quote_result: dict = {}
-    final_text: str = ""
+    error: str | None = None
+    normalized_ticket: dict = {}
+    partner_id: int | None = None
+    resolved_fields: dict = {}
+    ticket_vals: dict = {}
+    ticket_id: int | None = None
 
 
 @app.post("/process", response_model=ProcessResponse)
 async def process(request: ProcessRequest):
-    result = await run_pipeline(
-        source_input=request.source_input,
-        thread_id=request.thread_id,
+    result = await run_ticket_pipeline(
+        email_subject=request.email_subject,
+        email_body=request.email_body,
+        sender_email=request.sender_email,
+        sender_name=request.sender_name,
+        team_name=request.team_name,
     )
+
     # usamos 400 para errores de negocio y reservamos 422 para errores de validación Pydantic
-    if not result["ok"]:
+    if result.get("error"):
         raise HTTPException(status_code=400, detail=result)
     return result
 
