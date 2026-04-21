@@ -17,6 +17,7 @@ class OdooService:
     # ─── MUTACIONES ────────────────────────────────────────────────────────────
     # Usadas directamente por nodos del grafo. NO expuestas como tools.
     # Razón: crear registros en Odoo debe ser determinista, no delegarse al LLM.
+    # Note: _query is used directly where OdooAPIWrapper public methods lack ilike support.
 
     def find_products_by_text(self, text: str, limit: int = 5) -> list[dict]:
         domain = [("name", "ilike", text), ("active", "=", True)]
@@ -86,11 +87,12 @@ class OdooService:
             vals["partner_email"] = partner_email
         if team_id:
             vals["team_id"] = team_id
-        return self._wrapper._query("helpdesk.ticket", "create", [vals])
+        return self._wrapper._query(Table.Ticket, "create", [vals])
 
     # ─── CONSULTAS ─────────────────────────────────────────────────────────────
     # Expuestas como LangChain tools en odoo/tools.py.
     # Solo lectura — si fallan, no modifican nada en Odoo.
+    # Note: _query is used directly where OdooAPIWrapper public methods lack ilike support.
 
     def search_products(self, text: str, limit: int = 10) -> list[dict]:
         domain = [("name", "ilike", text), ("active", "=", True)]
@@ -156,7 +158,7 @@ class OdooService:
 
     def get_ticket(self, ticket_id: int) -> dict:
         results = self._wrapper._query(
-            "helpdesk.ticket",
+            Table.Ticket,
             "read",
             [[ticket_id]],
             {"fields": ["name", "description", "stage_id", "team_id", "partner_id"]},
@@ -165,7 +167,7 @@ class OdooService:
 
     def list_client_tickets(self, partner_id: int, limit: int = 10) -> list[dict]:
         return self._wrapper._query(
-            "helpdesk.ticket",
+            Table.Ticket,
             "search_read",
             [[("partner_id", "=", partner_id)]],
             {

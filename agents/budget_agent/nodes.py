@@ -1,11 +1,11 @@
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.state import BudgetState
+from odoo.tools import build_odoo_tools
 
 
-# helper para obtener dependencias inyectadas desde el config del grafo
 def _get_deps(config: RunnableConfig) -> BudgetDependencies:
     deps = config.get("configurable", {}).get("deps")
     if deps is None:
@@ -13,15 +13,55 @@ def _get_deps(config: RunnableConfig) -> BudgetDependencies:
     return deps
 
 
-# prepara el presupuesto obteniendo los requisitos/productos tal como vienen del json normalizado
-# error si no hay requisitos utilizables
+async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
+    tool_map = {t.name: t for t in tools}
+    results = []
+    for tc in getattr(response, "tool_calls", []):
+        tool = tool_map.get(tc["name"])
+        if tool:
+            try:
+                output = tool.invoke(tc["args"])
+                results.append(ToolMessage(content=str(output), tool_call_id=tc["id"]))
+            except Exception as e:
+                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc["id"]))
+    return results
+
+
+# TOOL-CALLING: el LLM consulta Odoo para enriquecer el contexto del presupuesto.
+# Solo lectura — los errores son silenciosos para no bloquear el flujo principal.
+# Las mutaciones (buscar productos, crear partner, crear orden) ocurren en nodos siguientes.
+async def enrich_context_node(state: BudgetState, config: RunnableConfig) -> dict:
+    deps = _get_deps(config)
+    tools = build_odoo_tools(deps.odoo_service)
+    llm_with_tools = deps.llm.bind_tools(tools)
+
+    normalized = state.get("normalized_request", {})
+    company_name = normalized.get("company_name", "")
+    requirements = normalized.get("requirements", [])
+
+    prompt = (
+        f"Consulta el catálogo de Odoo y el historial del cliente para preparar el presupuesto. "
+        f"Empresa: '{company_name}'. Requisitos solicitados: {requirements}."
+    )
+    messages = list(state.get("messages", [])) + [HumanMessage(content=prompt)]
+
+    try:
+        response = await llm_with_tools.ainvoke(messages)
+        tool_messages = await _run_tool_calls(response, tools)
+        return {
+            "messages": messages + [response] + tool_messages,
+            "odoo_context": {"raw_results": [m.content for m in tool_messages]},
+        }
+    except Exception:
+        return {"odoo_context": {}}
+
+
 async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
     normalized_request = state["normalized_request"]
     requirements = normalized_request.get("requirements", [])
 
-    # validación mínima: debe haber requisitos para poder construir presupuesto
     if not requirements:
         return {
             "error": "La solicitud no contiene requisitos. No se puede crear presupuesto.",
@@ -32,19 +72,15 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
     unmatched_requirements = []
 
     try:
-        # por cada requisito buscamos coincidencias en los productos reales de Odoo
         for requirement in requirements:
             value = str(requirement).strip()
             if not value:
                 continue
 
-            matches = deps.odoo_wrapper.find_products_by_text(value, limit=5)
+            matches = deps.odoo_service.find_products_by_text(value, limit=5)
 
-            # si hay coincidencias, usamos la primera
             if matches:
                 product = matches[0]
-
-                # evitamos duplicados por id
                 if not any(p["id"] == product["id"] for p in selected_products):
                     selected_products.append(product)
             else:
@@ -56,22 +92,16 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
             "selected_products": [],
         }
 
-    # validación: debe haberse encontrado al menos un producto real en Odoo
     if not selected_products:
         return {
-            "error": (
-                f"No se encontraron productos en Odoo para los requisitos: {requirements}"
-            ),
+            "error": f"No se encontraron productos en Odoo para los requisitos: {requirements}",
             "selected_products": [],
         }
 
     return {
         "messages": [
             AIMessage(
-                content=(
-                    f"Solicitud preparada para presupuesto con "
-                    f"{len(selected_products)} productos encontrados en Odoo"
-                )
+                content=f"Solicitud preparada para presupuesto con {len(selected_products)} productos encontrados en Odoo"
             )
         ],
         "selected_products": selected_products,
@@ -80,8 +110,6 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
     }
 
 
-# crea o recupera el contacto del cliente en odoo
-# se usa el company_name del json normalizado
 async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
@@ -89,11 +117,9 @@ async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dic
     company_name = normalized_request.get("company_name", "Desconocido")
 
     try:
-        partner_id = deps.odoo_wrapper.get_or_create_contact(company_name)
+        partner_id = deps.odoo_service.get_or_create_contact(company_name)
     except Exception as e:
-        return {
-            "error": f"Error al obtener o crear el contacto en Odoo: {e}",
-        }
+        return {"error": f"Error al obtener o crear el contacto en Odoo: {e}"}
 
     return {
         "messages": [
@@ -104,8 +130,6 @@ async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dic
     }
 
 
-# crea el presupuesto real en odoo usando los productos seleccionados
-# por simplicidad, añade una línea por producto con cantidad 1
 async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
@@ -115,24 +139,19 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
     partner_id = state["partner_id"]
 
     try:
-        # crea la cabecera del presupuesto
-        sale_order_id = deps.odoo_wrapper.create_sale_order(partner_id=partner_id)
+        sale_order_id = deps.odoo_service.create_sale_order(partner_id=partner_id)
 
-        # añade líneas al presupuesto usando directamente los productos ya resueltos desde Odoo
         for product in selected_products:
-            deps.odoo_wrapper.create_sale_order_line(
+            deps.odoo_service.create_sale_order_line(
                 order_id=sale_order_id,
                 product_id=product["id"],
                 quantity=1,
             )
 
-        # lee el presupuesto ya creado para devolver un resumen útil
-        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        order = deps.odoo_service.get_sale_order(sale_order_id)
 
     except Exception as e:
-        return {
-            "error": f"Error al crear el presupuesto en Odoo: {e}",
-        }
+        return {"error": f"Error al crear el presupuesto en Odoo: {e}"}
 
     quote_summary = {
         "company_name": company_name,
@@ -153,10 +172,7 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
     return {
         "messages": [
             AIMessage(
-                content=(
-                    f"Presupuesto creado en Odoo para {company_name}. "
-                    f"ID={sale_order_id}, total={quote_summary['total']} {quote_summary['currency']}"
-                )
+                content=f"Presupuesto creado en Odoo para {company_name}. ID={sale_order_id}, total={quote_summary['total']} EUR"
             )
         ],
         "sale_order_id": sale_order_id,
@@ -164,13 +180,9 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
         "error": None,
     }
 
-# nodo terminal de error: devuelve el error de forma controlada
-# evita lanzar excepción y deja el resultado preparado para la capa superior
+
 async def error_node(state: BudgetState) -> dict:
     error_msg = state.get("error", "Error desconocido en el agente de presupuestos")
-
     return {
-        "messages": [
-            AIMessage(content=f"No se ha podido crear el presupuesto: {error_msg}")
-        ]
+        "messages": [AIMessage(content=f"No se ha podido crear el presupuesto: {error_msg}")]
     }

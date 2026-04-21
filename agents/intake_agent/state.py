@@ -12,6 +12,9 @@ class TicketAgentState(TypedDict, total=False):
     # Salida de normalización
     normalized_ticket: dict[str, Any]
 
+    # Contexto enriquecido por enrich_context_node via tool-calling (solo lectura)
+    odoo_context: dict[str, Any]
+
     # Resultado Odoo
     partner_id: int | None
     ticket_id: int | None

@@ -24,27 +24,32 @@ def test_find_products_by_text_returns_list(service):
 def test_get_or_create_contact_creates_new(service):
     name = "_test_empresa_temp_borrar"
     partner_id = service.get_or_create_contact(name)
-    assert isinstance(partner_id, int)
-    service._wrapper.delete(Table.Contact, [partner_id])
+    try:
+        assert isinstance(partner_id, int)
+    finally:
+        service._wrapper.delete(Table.Contact, [partner_id])
 
 
 def test_get_or_create_contact_returns_existing_id(service):
     name = "_test_empresa_dedup"
     pid1 = service.get_or_create_contact(name)
-    pid2 = service.get_or_create_contact(name)
-    assert pid1 == pid2
-    service._wrapper.delete(Table.Contact, [pid1])
+    try:
+        pid2 = service.get_or_create_contact(name)
+        assert pid1 == pid2
+    finally:
+        service._wrapper.delete(Table.Contact, [pid1])
 
 
 def test_create_and_get_sale_order(service):
     partner_id = service.get_or_create_contact("_test_cliente_orden_temp")
-    order_id = service.create_sale_order(partner_id)
-    assert isinstance(order_id, int)
-    order = service.get_sale_order(order_id)
-    assert "amount_total" in order
-    # cancelar la orden antes de borrar el cliente
-    service._wrapper._query("sale.order", "action_cancel", [[order_id]])
-    service._wrapper.delete(Table.Contact, [partner_id])
+    try:
+        order_id = service.create_sale_order(partner_id)
+        assert isinstance(order_id, int)
+        order = service.get_sale_order(order_id)
+        assert "amount_total" in order
+        service._wrapper._query("sale.order", "action_cancel", [[order_id]])
+    finally:
+        service._wrapper.delete(Table.Contact, [partner_id])
 
 
 # ── CONSULTAS ────────────────────────────────────────────────────────────────

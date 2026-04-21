@@ -1,10 +1,10 @@
 import json
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
-from odoo.helpers import Table
+from odoo.tools import build_odoo_tools
 from .state import TicketAgentState
 from .dependencies import TicketAgentDependencies
 
@@ -65,7 +65,6 @@ Cuerpo:
     except Exception as e:
         return {"error": f"No se pudo parsear el JSON del LLM: {e}"}
 
-    # Validación mínima y explícita
     title = normalized.get("title")
     description = normalized.get("description")
 
@@ -74,11 +73,55 @@ Cuerpo:
     if not description or not isinstance(description, str):
         return {"error": "El LLM no devolvió un description válido"}
 
-    # Fallbacks seguros
     normalized["customer_email"] = normalized.get("customer_email") or sender_email or None
     normalized["customer_name"] = normalized.get("customer_name") or sender_name or None
 
     return {"normalized_ticket": normalized}
+
+
+async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
+    tool_map = {t.name: t for t in tools}
+    results = []
+    for tc in getattr(response, "tool_calls", []):
+        tool = tool_map.get(tc["name"])
+        if tool:
+            try:
+                output = tool.invoke(tc["args"])
+                results.append(ToolMessage(content=str(output), tool_call_id=tc["id"]))
+            except Exception as e:
+                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc["id"]))
+    return results
+
+
+# TOOL-CALLING: el LLM consulta Odoo para enriquecer el contexto del ticket.
+# Solo lectura — los errores son silenciosos para no bloquear el flujo principal.
+# Las mutaciones (crear partner, crear ticket) ocurren en los nodos siguientes.
+async def enrich_context_node(
+    state: TicketAgentState,
+    config: RunnableConfig,
+) -> dict[str, Any]:
+    if state.get("error"):
+        return {}
+
+    deps = _get_deps(config)
+    tools = build_odoo_tools(deps.odoo_service)
+    llm_with_tools = deps.llm.bind_tools(tools)
+
+    normalized = state.get("normalized_ticket", {})
+    customer_name = normalized.get("customer_name") or ""
+    customer_email = normalized.get("customer_email") or ""
+
+    prompt = (
+        f"Consulta si el cliente existe en Odoo y obtén su historial. "
+        f"Nombre: '{customer_name}', email: '{customer_email}'."
+    )
+
+    try:
+        response = await llm_with_tools.ainvoke([HumanMessage(content=prompt)])
+        tool_messages = await _run_tool_calls(response, tools)
+        return {"odoo_context": {"raw_results": [m.content for m in tool_messages]}}
+    except Exception:
+        return {"odoo_context": {}}
 
 
 def ensure_partner_node(
@@ -95,28 +138,9 @@ def ensure_partner_node(
     customer_name = normalized.get("customer_name") or "Cliente sin identificar"
 
     if not customer_email:
-        # Sin email no forzamos partner; el ticket puede crearse igualmente
         return {"partner_id": None}
 
-    existing = deps.odoo_service.get_by_value(
-        Table.Contact,
-        {"email": customer_email},
-        fields=["id", "name", "email"],
-        limit=1,
-    )
-
-    if existing:
-        return {"partner_id": existing[0]["id"]}
-
-    partner_id = deps.odoo_service.create(
-        Table.Contact,
-        {
-            "name": customer_name,
-            "email": customer_email,
-            "customer_rank": 1,
-        },
-    )
-
+    partner_id = deps.odoo_service.get_or_create_contact(customer_name)
     return {"partner_id": partner_id}
 
 
@@ -130,32 +154,11 @@ def create_ticket_node(
     deps = _get_deps(config)
     normalized = state["normalized_ticket"]
 
-    ticket_vals = {
-        "name": normalized["title"],
-        "description": normalized["description"],
-    }
-
-    # Asociar team si se informa
-    team_name = state.get("team_name")
-    if team_name:
-        team = deps.odoo_service._query(
-            Table.TicketTeam,
-            "search_read",
-            [[("name", "=", team_name)]],
-            {"fields": ["id", "name"], "limit": 1},
-        )
-        if team:
-            ticket_vals["team_id"] = team[0]["id"]
-
-    # Asociar partner si existe
-    if state.get("partner_id"):
-        ticket_vals["partner_id"] = state["partner_id"]
-
-    # Guardar también datos directos del remitente cuando estén
-    customer_email = normalized.get("customer_email")
-    if customer_email:
-        ticket_vals["partner_email"] = customer_email
-
-    ticket_id = deps.odoo_service.create(Table.Ticket, ticket_vals)
+    ticket_id = deps.odoo_service.create_helpdesk_ticket(
+        name=normalized["title"],
+        description=normalized["description"],
+        partner_id=state.get("partner_id"),
+        partner_email=normalized.get("customer_email"),
+    )
 
     return {"ticket_id": ticket_id}
