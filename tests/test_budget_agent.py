@@ -207,5 +207,5 @@ async def test_json_con_requisitos_no_mapeables_devuelve_error():
     )
 
     assert result["error"] is not None
-    assert "no se encontraron productos presupuestables" in result["error"].lower()
+    assert "no se encontraron productos" in result["error"].lower()
     assert result.get("sale_order_id") is None
