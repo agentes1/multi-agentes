@@ -5,6 +5,20 @@ from langchain_ollama import ChatOllama
 from shared.config import OLLAMA_MODEL, OLLAMA_TEMPERATURE
 
 
+def _parse_model(value: object, default: str = "qwen3:4b") -> str:
+    """
+    Devuelve un nombre de modelo válido tolerando valores vacíos o inválidos.
+    """
+    if value is None:
+        return default
+
+    normalized = str(value).strip()
+    if not normalized or normalized.lower() == "none":
+        return default
+
+    return normalized
+
+
 def _parse_temperature(value: object, default: float = 0.0) -> float:
     """
     Convierte la temperatura a float tolerando valores vacíos o inválidos.
@@ -23,7 +37,9 @@ def _parse_temperature(value: object, default: float = 0.0) -> float:
 
 
 def get_llm(model: str | None = None, temperature: float | None = None) -> ChatOllama:
-    selected_model = model or os.getenv("OLLAMA_MODEL_OVERRIDE") or OLLAMA_MODEL
+    selected_model = _parse_model(
+        model or os.getenv("OLLAMA_MODEL_OVERRIDE") or OLLAMA_MODEL
+    )
     default_temperature = _parse_temperature(OLLAMA_TEMPERATURE)
     selected_temperature = (
         float(temperature)

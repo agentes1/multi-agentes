@@ -2,10 +2,9 @@ import uuid
 
 import pytest
 
-from agents.intake_agent.dependencies import IntakeDependencies
-from agents.intake_agent.graph import build_intake_graph
-from odoo.api_wrapper import OdooAPIWrapper
-from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
+from agents.intake_agent.dependencies import TicketAgentDependencies
+from agents.intake_agent.graph import build_ticket_graph
+from odoo.helpers import Table
 
 
 class MockLLMResponse:
@@ -19,19 +18,132 @@ class MockLLMResponse:
         return Response()
 
 
-def _build_deps(mock_json: str) -> IntakeDependencies:
-    return IntakeDependencies(
+class FakeOdooService:
+    def __init__(self):
+        self.next_contact_id = 2
+        self.next_ticket_id = 1
+        self.contacts = [
+            {
+                "id": 1,
+                "name": "ACME",
+                "email": "info@acme.com",
+                "is_company": True,
+                "customer_rank": 1,
+            }
+        ]
+        self.teams = [
+            {"id": 10, "name": "Presupuestos"},
+            {"id": 11, "name": "Soporte cliente"},
+        ]
+        self.types = [
+            {"id": 20, "name": "Presupuesto"},
+            {"id": 21, "name": "Soporte"},
+        ]
+        self.categories = [
+            {"id": 30, "name": "Consulta presupuesto"},
+            {"id": 31, "name": "Problema"},
+            {"id": 32, "name": "Interno"},
+        ]
+        self.stages = [
+            {"id": 40, "name": "Nuevo"},
+        ]
+        self.tags = [
+            {"id": 50, "name": "Urgente"},
+            {"id": 51, "name": "Cliente nuevo"},
+            {"id": 52, "name": "Faltan datos"},
+            {"id": 53, "name": "Pendiente validación"},
+        ]
+        self.tickets = []
+
+    def _query(self, model, method, args=None, kwargs=None):
+        args = args or []
+        kwargs = kwargs or {}
+
+        if str(model) == str(Table.Ticket) and method == "fields_get":
+            return {
+                "name": {"type": "char"},
+                "description": {"type": "text"},
+                "priority": {"type": "selection"},
+                "partner_id": {"type": "many2one"},
+                "partner_email": {"type": "char"},
+                "partner_name": {"type": "char"},
+                "team_id": {"type": "many2one"},
+                "type_id": {"type": "many2one"},
+                "category_id": {"type": "many2one"},
+                "stage_id": {"type": "many2one"},
+                "tag_ids": {"type": "many2many"},
+            }
+
+        if method != "search_read":
+            raise NotImplementedError(f"Unsupported method: {model}.{method}")
+
+        domain = args[0] if args else []
+        limit = kwargs.get("limit", 1)
+        records = self._records_for_model(model)
+        matched = [record for record in records if self._matches_domain(record, domain)]
+        return matched[:limit]
+
+    def get_by_value(self, table, criteria, fields=None, limit=1000):
+        records = self._records_for_model(table)
+        matched = []
+        for record in records:
+            if all(record.get(field) == value for field, value in criteria.items()):
+                matched.append(record)
+        return matched[:limit] or None
+
+    def create(self, table, rows):
+        if str(table) == str(Table.Contact):
+            row = {"id": self.next_contact_id, **rows}
+            self.next_contact_id += 1
+            self.contacts.append(row)
+            return row["id"]
+
+        if str(table) == str(Table.Ticket):
+            row = {"id": self.next_ticket_id, **rows}
+            self.next_ticket_id += 1
+            self.tickets.append(row)
+            return row["id"]
+
+        raise NotImplementedError(f"Unsupported create table: {table}")
+
+    def _records_for_model(self, model):
+        model_name = str(model)
+        if model_name == str(Table.Contact):
+            return self.contacts
+        if model_name == str(Table.TicketTeam):
+            return self.teams
+        if model_name == str(Table.TicketType):
+            return self.types
+        if model_name == str(Table.TicketCategory):
+            return self.categories
+        if model_name == str(Table.TicketStage):
+            return self.stages
+        if model_name == str(Table.TicketTag):
+            return self.tags
+        raise NotImplementedError(f"Unsupported model: {model_name}")
+
+    def _matches_domain(self, record, domain):
+        for field, operator, value in domain:
+            record_value = record.get(field)
+            if operator == "=" and record_value != value:
+                return False
+            if operator == "=ilike":
+                if record_value is None or str(record_value).casefold() != str(value).casefold():
+                    return False
+            if operator == "ilike":
+                if record_value is None or str(value).casefold() not in str(record_value).casefold():
+                    return False
+        return True
+
+
+def _build_deps(mock_json: str, odoo_service: FakeOdooService | None = None) -> TicketAgentDependencies:
+    return TicketAgentDependencies(
         llm=MockLLMResponse(mock_json),
-        odoo_service=OdooAPIWrapper(
-            url=ODOO_BASE_URL,
-            username=ODOO_USERNAME,
-            password=ODOO_PASSWORD,
-            db=ODOO_DB,
-        ),
+        odoo_service=odoo_service or FakeOdooService(),
     )
 
 
-def _base_config(deps: IntakeDependencies) -> dict:
+def _base_config(deps: TicketAgentDependencies) -> dict:
     return {
         "configurable": {
             "deps": deps,
@@ -40,286 +152,124 @@ def _base_config(deps: IntakeDependencies) -> dict:
     }
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_email_crea_ticket_issue_real_en_odoo():
-    graph = build_intake_graph()
+async def test_email_cliente_antiguo_presupuesto_muy_urgente():
+    graph = build_ticket_graph()
+    odoo_service = FakeOdooService()
     deps = _build_deps(
         """{
-            "company_name": "Acme SL",
-            "project_summary": "Error al crear oportunidades en Odoo CRM",
-            "requirements": ["crm", "odoo"],
-            "urgency": "alta",
-            "ticket_type": "issue",
-            "missing_information": ["Adjuntar captura del error"]
-        }"""
+            "title": "Presupuesto urgente para CRM",
+            "description": "Necesitamos una propuesta urgente para implantar CRM.",
+            "company_name": null,
+            "partner_name": null,
+            "customer_email": "ana_lopez@acme.com",
+            "team": null,
+            "ticket_type": "presupuesto",
+            "category": null,
+            "stage": null,
+            "tags": [],
+            "priority": "muy urgente"
+        }""",
+        odoo_service=odoo_service,
     )
 
     result = await graph.ainvoke(
         {
-            "source_input": {
-                "channel": "email",
-                "from": "cliente@acme.com",
-                "subject": "Incidencia con CRM",
-                "body": (
-                    "Hola, somos Acme SL. "
-                    "Tenemos un error al crear oportunidades en Odoo CRM "
-                    "y necesitamos ayuda urgente."
-                ),
-            }
+            "email_subject": "Presupuesto CRM",
+            "email_body": "Necesito un presupuesto urgente para un CRM.",
+            "sender_email": "ana_lopez@acme.com",
+            "sender_name": None,
+            "team_name": None,
         },
         config=_base_config(deps),
     )
 
-    ticket_id = result.get("ticket_id")
-
-    try:
-        assert result["error"] is None
-        assert ticket_id is not None
-        assert isinstance(ticket_id, int)
-
-        # salida estructurada del agente
-        assert result["ticket_type"] == "issue"
-        assert result["normalized_request"]["company_name"] == "Acme SL"
-        assert result["normalized_request"]["project_summary"] == "Error al crear oportunidades en Odoo CRM"
-        assert result["normalized_request"]["requirements"] == ["crm", "odoo"]
-        assert result["normalized_request"]["urgency"] == "alta"
-        assert result["normalized_request"]["missing_information"] == ["Adjuntar captura del error"]
-
-        # payload ya preparado para Odoo
-        payload = result["ticket_payload"]
-        assert payload["team_name"] == "Soporte cliente"
-        assert payload["type_name"] == "Soporte"
-        assert payload["category_name"] == "Problema"
-        assert payload["priority"] == "2"
-        assert "Faltan datos" in payload["tag_names"]
-        assert "Urgente" in payload["tag_names"]
-
-        # comprobación real en Odoo
-        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
-        assert ticket is not None
-        assert ticket["id"] == ticket_id
-        assert ticket["name"] == "Error al crear oportunidades en Odoo CRM"
-        assert ticket["team_id"][0] == deps.odoo_service.get_team_id_by_name("Soporte cliente")
-
-    finally:
-        if ticket_id:
-            print("fin")
+    assert result.get("error") is None
+    assert result["partner_id"] == 1
+    assert result["company_is_new"] is False
+    assert result["normalized_ticket"]["company_name"] == "ACME"
+    assert result["normalized_ticket"]["partner_name"] == "Ana Lopez"
+    assert result["resolved_fields"]["team_name"] == "Presupuestos"
+    assert "Urgente" in result["resolved_fields"]["tag_names"]
+    assert "Cliente nuevo" not in result["resolved_fields"]["tag_names"]
+    assert result["ticket_vals"]["partner_name"] == "Ana Lopez"
+    assert result["ticket_vals"]["partner_email"] == "ana_lopez@acme.com"
+    assert "Datos que faltan" not in result["ticket_vals"]["description"]
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_email_normaliza_urgency_y_ticket_type_y_crea_ticket():
-    graph = build_intake_graph()
+async def test_email_cliente_nuevo_crea_empresa_y_tag_cliente_nuevo():
+    graph = build_ticket_graph()
+    odoo_service = FakeOdooService()
     deps = _build_deps(
         """{
-            "company_name": "Beta SL",
-            "project_summary": "No funciona el envío de correos automáticos",
-            "requirements": ["correo automático", "odoo"],
-            "urgency": "urgente",
+            "title": "Incidencia en portal",
+            "description": "No podemos acceder al portal de clientes.",
+            "company_name": null,
+            "partner_name": null,
+            "customer_email": "laura@newco.com",
+            "team": null,
             "ticket_type": "incidencia",
-            "missing_information": []
-        }"""
+            "category": null,
+            "stage": null,
+            "tags": [],
+            "priority": "normal"
+        }""",
+        odoo_service=odoo_service,
     )
 
     result = await graph.ainvoke(
         {
-            "source_input": {
-                "channel": "email",
-                "from": "soporte@beta.com",
-                "subject": "Problema con correos",
-                "body": (
-                    "Buenos días, en Beta SL no funciona el envío de correos automáticos."
-                ),
-            }
+            "email_subject": "Error de acceso",
+            "email_body": "No podemos acceder al portal.",
+            "sender_email": "laura@newco.com",
+            "sender_name": None,
+            "team_name": None,
         },
         config=_base_config(deps),
     )
 
-    ticket_id = result.get("ticket_id")
-
-    try:
-        assert result["error"] is None
-        assert ticket_id is not None
-
-        # normalizaciones
-        assert result["normalized_request"]["urgency"] == "alta"
-        assert result["normalized_request"]["ticket_type"] == "issue"
-        assert result["ticket_type"] == "issue"
-
-        payload = result["ticket_payload"]
-        assert payload["team_name"] == "Soporte cliente"
-        assert payload["priority"] == "2"
-        assert "Urgente" in payload["tag_names"]
-
-        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
-        assert ticket is not None
-        assert ticket["id"] == ticket_id
-        assert ticket["name"] == "No funciona el envío de correos automáticos"
-
-    finally:
-        if ticket_id:
-            print("fin")
+    assert result.get("error") is None
+    assert result["company_is_new"] is True
+    assert result["normalized_ticket"]["company_name"] == "Newco"
+    assert result["normalized_ticket"]["partner_name"] == "Laura"
+    assert "Cliente nuevo" in result["resolved_fields"]["tag_names"]
+    assert any(contact["name"] == "Newco" for contact in odoo_service.contacts)
 
 
-@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_chat_crea_ticket_real_en_odoo():
-    graph = build_intake_graph()
+async def test_email_con_datos_faltantes_anade_tag_y_descripcion():
+    graph = build_ticket_graph()
     deps = _build_deps(
         """{
-            "company_name": "Gamma Tech",
-            "project_summary": "Fallo al visualizar dashboard de ventas",
-            "requirements": ["dashboard", "ventas"],
-            "urgency": "media",
-            "ticket_type": "issue",
-            "missing_information": []
+            "title": "Solicitud poco clara",
+            "description": "El cliente pide ayuda pero no concreta nada.",
+            "company_name": null,
+            "partner_name": null,
+            "customer_email": null,
+            "team": null,
+            "ticket_type": null,
+            "category": null,
+            "stage": null,
+            "tags": [],
+            "priority": "normal"
         }"""
     )
 
     result = await graph.ainvoke(
         {
-            "source_input": {
-                "channel": "chat",
-                "user_name": "Laura",
-                "company_name": "Gamma Tech",
-                "message": "No podemos visualizar el dashboard de ventas desde esta mañana.",
-            }
+            "email_subject": "Ayuda",
+            "email_body": "Necesito ayuda con algo del sistema.",
+            "sender_email": "",
+            "sender_name": None,
+            "team_name": None,
         },
         config=_base_config(deps),
     )
 
-    ticket_id = result.get("ticket_id")
-
-    try:
-        assert result["error"] is None
-        assert ticket_id is not None
-
-        assert result["ticket_type"] == "issue"
-        assert result["normalized_request"]["company_name"] == "Gamma Tech"
-        assert result["normalized_request"]["requirements"] == ["dashboard", "ventas"]
-        assert result["normalized_request"]["urgency"] == "media"
-
-        payload = result["ticket_payload"]
-        assert payload["team_name"] == "Soporte cliente"
-        assert payload["priority"] == "1"
-
-        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
-        assert ticket is not None
-        assert ticket["id"] == ticket_id
-        assert ticket["name"] == "Fallo al visualizar dashboard de ventas"
-
-    finally:
-        if ticket_id:
-            print("fin")
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_budget_crea_ticket_en_equipo_presupuestos():
-    graph = build_intake_graph()
-    deps = _build_deps(
-        """{
-            "company_name": "Delta Solutions",
-            "project_summary": "Necesitamos propuesta para implantar CRM y automatización de emails",
-            "requirements": ["crm", "automatización de emails"],
-            "urgency": "baja",
-            "ticket_type": "budget",
-            "missing_information": []
-        }"""
-    )
-
-    result = await graph.ainvoke(
-        {
-            "source_input": {
-                "channel": "email",
-                "from": "direccion@delta.com",
-                "subject": "Solicitud de presupuesto",
-                "body": (
-                    "Queremos una propuesta para implantar CRM y automatizar emails."
-                ),
-            }
-        },
-        config=_base_config(deps),
-    )
-
-    ticket_id = result.get("ticket_id")
-
-    try:
-        assert result["error"] is None
-        assert ticket_id is not None
-
-        assert result["ticket_type"] == "budget"
-        assert result["normalized_request"]["urgency"] == "baja"
-
-        payload = result["ticket_payload"]
-        assert payload["team_name"] == "Presupuestos"
-        assert payload["type_name"] == "Presupuesto"
-        assert payload["category_name"] == "Consulta presupuesto"
-        assert payload["priority"] == "0"
-        assert "Cliente nuevo" in payload["tag_names"]
-
-        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
-        assert ticket is not None
-        assert ticket["id"] == ticket_id
-        assert ticket["name"] == "Necesitamos propuesta para implantar CRM y automatización de emails"
-
-    finally:
-        if ticket_id:
-            print("fin")
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_discard_crea_ticket_para_revision_manual():
-    graph = build_intake_graph()
-    deps = _build_deps(
-        """{
-            "company_name": "Empresa X",
-            "project_summary": "Mensaje poco claro del cliente",
-            "requirements": [],
-            "urgency": "normal",
-            "ticket_type": "spam",
-            "missing_information": ["Aclarar la necesidad real del cliente"]
-        }"""
-    )
-
-    result = await graph.ainvoke(
-        {
-            "source_input": {
-                "channel": "email",
-                "from": "contacto@empresax.com",
-                "subject": "Consulta",
-                "body": "Hola, queríamos hablar de algo del sistema, gracias.",
-            }
-        },
-        config=_base_config(deps),
-    )
-
-    ticket_id = result.get("ticket_id")
-
-    try:
-        assert result["error"] is None
-        assert ticket_id is not None
-
-        # normalizaciones
-        assert result["normalized_request"]["urgency"] == "media"
-        assert result["normalized_request"]["ticket_type"] == "discard"
-        assert result["ticket_type"] == "discard"
-
-        payload = result["ticket_payload"]
-        assert payload["team_name"] == "Soporte cliente"
-        assert payload["type_name"] == "Soporte"
-        assert payload["category_name"] == "Interno"
-        assert payload["priority"] == "1"
-        assert "Pendiente validación" in payload["tag_names"]
-        assert "Faltan datos" in payload["tag_names"]
-
-        ticket = deps.odoo_service.get_helpdesk_ticket(ticket_id)
-        assert ticket is not None
-        assert ticket["id"] == ticket_id
-        assert ticket["name"] == "Mensaje poco claro del cliente"
-
-    finally:
-        if ticket_id:
-            print("fin")
+    assert result.get("error") is None
+    assert result["missing_fields"] == ["compania", "tipo de ticket"]
+    assert "Faltan datos" in result["resolved_fields"]["tag_names"]
+    assert "Datos que faltan:" in result["ticket_vals"]["description"]
+    assert "- compania" in result["ticket_vals"]["description"]
+    assert "- tipo de ticket" in result["ticket_vals"]["description"]
