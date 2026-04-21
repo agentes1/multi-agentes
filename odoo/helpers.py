@@ -3,7 +3,7 @@ from enum import StrEnum
 class Table(StrEnum):
     Product = 'product.product'
     Contact = 'res.partner'
-    Ticket = 'jelpdesk.ticket'
+    Ticket = 'helpdesk.ticket'
     TicketType = 'helpdesk.ticket.type'
     TicketTeam = 'helpdesk.ticket.team'
     TicketCategory = 'helpdesk.ticket.category'
