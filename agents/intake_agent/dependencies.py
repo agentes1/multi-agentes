@@ -1,7 +1,7 @@
 # agents/intake_agent/dependencies.py
 from dataclasses import dataclass
 
-from odoo.api_wrapper import OdooAPIWrapper
+from odoo.api import OdooAPIWrapper
 from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
 from shared.llm import get_llm
 
