@@ -86,10 +86,10 @@ async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
         tool = tool_map.get(tc["name"])
         if tool:
             try:
-                output = tool.invoke(tc["args"])
-                results.append(ToolMessage(content=str(output), tool_call_id=tc["id"]))
+                output = await tool.ainvoke(tc.get("args", {}))
+                results.append(ToolMessage(content=str(output), tool_call_id=tc.get("id", "")))
             except Exception as e:
-                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc["id"]))
+                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc.get("id", "")))
     return results
 
 
@@ -104,9 +104,6 @@ async def enrich_context_node(
         return {}
 
     deps = _get_deps(config)
-    tools = build_odoo_tools(deps.odoo_service)
-    llm_with_tools = deps.llm.bind_tools(tools)
-
     normalized = state.get("normalized_ticket", {})
     customer_name = normalized.get("customer_name") or ""
     customer_email = normalized.get("customer_email") or ""
@@ -117,6 +114,8 @@ async def enrich_context_node(
     )
 
     try:
+        tools = build_odoo_tools(deps.odoo_service)
+        llm_with_tools = deps.llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke([HumanMessage(content=prompt)])
         tool_messages = await _run_tool_calls(response, tools)
         return {"odoo_context": {"raw_results": [m.content for m in tool_messages]}}

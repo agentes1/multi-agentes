@@ -20,10 +20,10 @@ async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
         tool = tool_map.get(tc["name"])
         if tool:
             try:
-                output = tool.invoke(tc["args"])
-                results.append(ToolMessage(content=str(output), tool_call_id=tc["id"]))
+                output = await tool.ainvoke(tc.get("args", {}))
+                results.append(ToolMessage(content=str(output), tool_call_id=tc.get("id", "")))
             except Exception as e:
-                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc["id"]))
+                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc.get("id", "")))
     return results
 
 
@@ -32,9 +32,6 @@ async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
 # Las mutaciones (buscar productos, crear partner, crear orden) ocurren en nodos siguientes.
 async def enrich_context_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
-    tools = build_odoo_tools(deps.odoo_service)
-    llm_with_tools = deps.llm.bind_tools(tools)
-
     normalized = state.get("normalized_request", {})
     company_name = normalized.get("company_name", "")
     requirements = normalized.get("requirements", [])
@@ -46,6 +43,8 @@ async def enrich_context_node(state: BudgetState, config: RunnableConfig) -> dic
     messages = list(state.get("messages", [])) + [HumanMessage(content=prompt)]
 
     try:
+        tools = build_odoo_tools(deps.odoo_service)
+        llm_with_tools = deps.llm.bind_tools(tools)
         response = await llm_with_tools.ainvoke(messages)
         tool_messages = await _run_tool_calls(response, tools)
         return {
@@ -59,7 +58,13 @@ async def enrich_context_node(state: BudgetState, config: RunnableConfig) -> dic
 async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
-    normalized_request = state["normalized_request"]
+    normalized_request = state.get("normalized_request")
+    if not normalized_request:
+        return {
+            "error": "La solicitud normalizada no está disponible. No se puede crear presupuesto.",
+            "selected_products": [],
+        }
+
     requirements = normalized_request.get("requirements", [])
 
     if not requirements:
@@ -68,8 +73,8 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
             "selected_products": [],
         }
 
-    selected_products = []
-    unmatched_requirements = []
+    selected_products: list[dict] = []
+    unmatched_requirements: list[str] = []
 
     try:
         for requirement in requirements:
@@ -113,7 +118,7 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
 async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
-    normalized_request = state["normalized_request"]
+    normalized_request = state.get("normalized_request") or {}
     company_name = normalized_request.get("company_name", "Desconocido")
 
     try:
@@ -133,10 +138,13 @@ async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dic
 async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
 
-    normalized_request = state["normalized_request"]
+    normalized_request = state.get("normalized_request") or {}
     company_name = normalized_request.get("company_name", "Desconocido")
     selected_products = state.get("selected_products", [])
-    partner_id = state["partner_id"]
+    partner_id = state.get("partner_id")
+
+    if not partner_id:
+        return {"error": "partner_id no disponible. No se puede crear el presupuesto."}
 
     try:
         sale_order_id = deps.odoo_service.create_sale_order(partner_id=partner_id)
@@ -182,7 +190,7 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
 
 
 async def error_node(state: BudgetState) -> dict:
-    error_msg = state.get("error", "Error desconocido en el agente de presupuestos")
+    error_msg = state.get("error") or "Error desconocido en el agente de presupuestos"
     return {
         "messages": [AIMessage(content=f"No se ha podido crear el presupuesto: {error_msg}")]
     }

@@ -11,16 +11,16 @@ from agents.budget_agent.nodes import (
 from agents.budget_agent.state import BudgetState
 
 
-def _route_after_enrich(state: BudgetState) -> str:
-    return "error_node" if state.get("error") else "prepare_budget_node"
-
-
 def _route_after_prepare(state: BudgetState) -> str:
     return "error_node" if state.get("error") else "ensure_partner_node"
 
 
 def _route_after_partner(state: BudgetState) -> str:
     return "error_node" if state.get("error") else "create_odoo_quote_node"
+
+
+def _route_after_quote(state: BudgetState) -> str:
+    return "error_node" if state.get("error") else END
 
 
 def build_budget_graph():
@@ -32,11 +32,12 @@ def build_budget_graph():
     builder.add_node("create_odoo_quote_node", create_odoo_quote_node)
     builder.add_node("error_node", error_node)
 
+    # enrich_context never sets error — direct edge
     builder.add_edge(START, "enrich_context_node")
-    builder.add_conditional_edges("enrich_context_node", _route_after_enrich)
+    builder.add_edge("enrich_context_node", "prepare_budget_node")
     builder.add_conditional_edges("prepare_budget_node", _route_after_prepare)
     builder.add_conditional_edges("ensure_partner_node", _route_after_partner)
-    builder.add_edge("create_odoo_quote_node", END)
+    builder.add_conditional_edges("create_odoo_quote_node", _route_after_quote)
     builder.add_edge("error_node", END)
 
     return builder.compile(checkpointer=InMemorySaver())

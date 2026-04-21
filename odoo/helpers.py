@@ -9,6 +9,8 @@ class Table(StrEnum):
     TicketCategory = 'helpdesk.ticket.category'
     TicketStage = 'helpdesk.ticket.stage'
     TicketTag = 'helpdesk.ticket.tag'
+    SaleOrder = 'sale.order'
+    SaleOrderLine = 'sale.order.line'
 
 contact_attrs = [
     "name",

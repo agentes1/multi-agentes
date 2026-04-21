@@ -76,3 +76,19 @@ def test_listar_tickets_cliente_devuelve_lista_vacia_si_no_hay_cliente():
     result = tool_map["listar_tickets_cliente"].invoke({"nombre": "Nadie"})
     assert result == []
     mock_service.list_client_tickets.assert_not_called()
+
+
+def test_consultar_orden_devuelve_not_found_si_no_existe():
+    tool_map, mock_service = _make_tools()
+    mock_service.get_order.return_value = {}
+    result = tool_map["consultar_orden"].invoke({"order_id": 99999})
+    assert result == {"found": False}
+    mock_service.get_order.assert_called_once_with(99999)
+
+
+def test_consultar_ticket_devuelve_not_found_si_no_existe():
+    tool_map, mock_service = _make_tools()
+    mock_service.get_ticket.return_value = {}
+    result = tool_map["consultar_ticket"].invoke({"ticket_id": 99999})
+    assert result == {"found": False}
+    mock_service.get_ticket.assert_called_once_with(99999)
