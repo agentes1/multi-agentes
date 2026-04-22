@@ -17,7 +17,7 @@ Primary users: internal pre-sales team; intended to automate quote generation fo
 
 | Component | Technology | Version / Notes |
 |---|---|---|
-| Language | Python | 3.11+ |
+| Language | Python | 3.13.x |
 | Agent framework | LangGraph | latest (from `langgraph`) |
 | LLM client | LangChain Ollama | `langchain-ollama` + `langchain-core` |
 | Default LLM | Ollama local | `qwen3:4b`, temp=0; overrideable via env |
@@ -28,7 +28,7 @@ Primary users: internal pre-sales team; intended to automate quote generation fo
 | Odoo integration | XML-RPC | `odoo_integration/odoo_api_wrapper.py` |
 | Evaluation | DeepEval | 3.9.5 (pinned) |
 | Linter / formatter | Ruff | configured in `pyproject.toml` |
-| Type checker | Mypy | Python 3.11, strict mode |
+| Type checker | Mypy | Python 3.13, strict mode |
 | Test runner | pytest | asyncio_mode=auto |
 | Memory persistence | JSON file | `memory_data/quote_memory.json` |
 
@@ -417,7 +417,7 @@ Many others commented out (mistral-nemo, llama3.1, llama3.3, qwen2.5, qwen3:8b, 
 ## 10. How to Run (dev setup)
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.13.x
 - [Ollama](https://ollama.com) running locally with at least one model
 - (Optional) Odoo 18 at `http://localhost:8069` with OCA `helpdesk_mgmt` installed
 

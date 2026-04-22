@@ -329,3 +329,91 @@ class OdooAPIWrapper:
             fields=['id', 'name', 'default_code', 'lst_price'],
             limit=limit,
         )
+
+    # helpers discuss / chat bot
+
+    def get_user_by_login(self, login):
+        users = self.search_read(
+            'res.users',
+            [('login', '=', login)],
+            fields=['id', 'login', 'partner_id', 'name'],
+            limit=1,
+        )
+        return users[0] if users else None
+
+    def get_partner_by_email(self, email):
+        partners = self.search_read(
+            'res.partner',
+            [('email', '=', email)],
+            fields=['id', 'name', 'email'],
+            limit=1,
+        )
+        return partners[0] if partners else None
+
+    def get_or_create_discuss_bot_user(self, login='assistant.bot', name='Assistant Chatbot'):
+        user = self.get_user_by_login(login)
+        if user:
+            return user
+
+        partner_id = self.create_contact({'name': name, 'email': login, 'company_type': 'person'})
+        user_id = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'res.users',
+            'create',
+            [{
+                'name': name,
+                'login': login,
+                'partner_id': partner_id,
+            }],
+        )
+        return self.search_read(
+            'res.users',
+            [('id', '=', user_id)],
+            fields=['id', 'login', 'partner_id', 'name'],
+            limit=1,
+        )[0]
+
+    def open_direct_chat(self, partner_ids, channel_name):
+        existing = self.search_read(
+            'mail.channel',
+            [('name', '=', channel_name)],
+            fields=['id', 'name'],
+            limit=1,
+        )
+        if existing:
+            return existing[0]
+
+        channel_id = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'mail.channel',
+            'create',
+            [{
+                'name': channel_name,
+                'channel_type': 'chat',
+                'channel_partner_ids': [(6, 0, partner_ids)],
+            }],
+        )
+        return {'id': channel_id, 'name': channel_name}
+
+    def post_message_to_channel(self, channel_id, body, author_id=None):
+        vals = {
+            'body': body,
+            'message_type': 'comment',
+            'model': 'mail.channel',
+            'res_id': channel_id,
+        }
+        if author_id:
+            vals['author_id'] = author_id
+
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'mail.message',
+            'create',
+            [vals],
+        )

@@ -11,7 +11,7 @@ Incluye:
 ## 1) Requisitos previos
 
 - Windows, macOS o Linux.
-- Python 3.11+.
+- Python 3.13.x.
 - Git.
 - (Opcional para flujo completo real) Ollama en ejecución con el modelo configurado (`llama3.1` por defecto).
 
@@ -29,13 +29,23 @@ Crear y activar entorno virtual.
 Windows PowerShell:
 
 ```powershell
-python -m venv .venv
+# Si tienes Python Launcher en Windows:
+py -3.13 -m venv .venv
+
+# Si no tienes `py`, usa el ejecutable de Python 3.13 instalado:
+# python3.13 -m venv .venv
+
 .\.venv\Scripts\Activate.ps1
 ```
+
+Si ya tenías un entorno virtual creado con otra versión de Python, recréalo con Python 3.13 antes de reinstalar dependencias.
 
 Instalar dependencias:
 
 ```bash
+python --version
+# esperado: Python 3.13.x
+
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
