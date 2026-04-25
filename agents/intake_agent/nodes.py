@@ -1,587 +1,272 @@
-import json
-import re
+from __future__ import annotations
+
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from odoo.helpers import Table
-from odoo.tools import build_odoo_tools
 from shared.catalog import (
     CANONICAL_TYPE_TO_ODOO_NAME,
-    DEFAULT_TICKET_BLUEPRINTS,
-    NORMALIZATION_SYSTEM_PROMPT,
+    DEFAULT_TICKET,
     PRIORITY_TO_ODOO,
     normalize_priority,
     normalize_ticket_type,
 )
+from shared.prompts import PARTNER_NAME_PROMPT, COMPANY_MATCH_PROMPT, NORMALIZATION_SYSTEM_PROMPT
+
 from .dependencies import TicketAgentDependencies
+from .schemas import Ticket
 from .state import TicketAgentState
 
 
-def _get_deps(config: RunnableConfig) -> TicketAgentDependencies:
+def _clean(value: Any) -> str | None:
+    """Limpia valores vacíos para evitar guardar strings con espacios."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _deps(config: RunnableConfig) -> TicketAgentDependencies:
+    """Obtiene las dependencias del agente desde la configuración del grafo."""
     return config["configurable"]["deps"]
 
 
-def _safe_text(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text if text else None
+def _split_email(email: str) -> tuple[str, str]:
+    """Separa el email en usuario y dominio para ayudar a detectar la empresa."""
+    email = email.strip().lower()
+    if "@" not in email:
+        return "", ""
+    local, domain = email.split("@", 1)
+    return local, domain.split(".")[0]
 
 
-def _titleize_name(value: str) -> str:
-    parts = [part for part in re.split(r"[\s._\-+]+", value) if part]
-    return " ".join(part.capitalize() for part in parts)
-
-
-def _extract_email_parts(email: str | None) -> tuple[str | None, str | None]:
-    email = _safe_text(email)
-    if not email or "@" not in email:
-        return None, None
-
-    local_part, domain = email.split("@", 1)
-    return local_part.strip(), domain.strip().lower()
-
-
-def _guess_partner_name(sender_name: str | None, sender_email: str | None) -> str | None:
-    explicit_name = _safe_text(sender_name)
-    if explicit_name:
-        return explicit_name
-
-    local_part, _ = _extract_email_parts(sender_email)
-    if not local_part:
-        return None
-
-    return _titleize_name(local_part)
-
-
-def _guess_company_name_from_email(sender_email: str | None) -> str | None:
-    _, domain = _extract_email_parts(sender_email)
-    if not domain:
-        return None
-
-    domain_parts = [part for part in domain.split(".") if part]
-    if len(domain_parts) < 2:
-        return None
-
-    company_token = domain_parts[-2]
-    if len(domain_parts) >= 3 and domain_parts[-2] in {"com", "net", "org", "co"}:
-        company_token = domain_parts[-3]
-
-    company_token = company_token.strip()
-    if not company_token:
-        return None
-
-    if len(company_token) <= 4:
-        return company_token.upper()
-
-    return _titleize_name(company_token)
-
-
-def _build_company_search_candidates(company_name: str | None, sender_email: str | None) -> list[str]:
-    candidates: list[str] = []
-
-    explicit_company = _safe_text(company_name)
-    if explicit_company:
-        candidates.append(explicit_company)
-
-    guessed_company = _guess_company_name_from_email(sender_email)
-    if guessed_company:
-        candidates.append(guessed_company)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = candidate.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(candidate)
-
-    return deduped
-
-
-def _find_company_partner(odoo, company_name: str | None, sender_email: str | None) -> dict[str, Any] | None:
-    candidates = _build_company_search_candidates(company_name, sender_email)
-    if not candidates:
-        return None
-
-    for candidate in candidates:
-        exact_matches = odoo._query(
-            Table.Contact,
-            "search_read",
-            [[("is_company", "=", True), ("name", "=ilike", candidate)]],
-            {"fields": ["id", "name", "email", "is_company"], "limit": 1},
-        )
-        if exact_matches:
-            return exact_matches[0]
-
-    for candidate in candidates:
-        fuzzy_matches = odoo._query(
-            Table.Contact,
-            "search_read",
-            [[("is_company", "=", True), ("name", "ilike", candidate)]],
-            {"fields": ["id", "name", "email", "is_company"], "limit": 1},
-        )
-        if fuzzy_matches:
-            return fuzzy_matches[0]
-
-    return None
-
-
-def _build_partner_debug_trace(
-    odoo,
-    company_name: str | None,
-    sender_email: str | None,
-) -> dict[str, Any]:
-    candidates = _build_company_search_candidates(company_name, sender_email)
-    trace: dict[str, Any] = {
-        "input_company_name": company_name,
-        "sender_email": sender_email,
-        "candidates": candidates,
-        "exact_matches": [],
-        "fuzzy_matches": [],
-    }
-
-    for candidate in candidates:
-        exact_matches = odoo._query(
-            Table.Contact,
-            "search_read",
-            [[("is_company", "=", True), ("name", "=ilike", candidate)]],
-            {"fields": ["id", "name", "email", "is_company"], "limit": 5},
-        )
-        trace["exact_matches"].append({"candidate": candidate, "results": exact_matches})
-
-    for candidate in candidates:
-        fuzzy_matches = odoo._query(
-            Table.Contact,
-            "search_read",
-            [[("is_company", "=", True), ("name", "ilike", candidate)]],
-            {"fields": ["id", "name", "email", "is_company"], "limit": 5},
-        )
-        trace["fuzzy_matches"].append({"candidate": candidate, "results": fuzzy_matches})
-
-    return trace
-
-
-def _find_id_by_name(odoo, table: str, value: str | None) -> int | None:
-    value = _safe_text(value)
-    if not value:
-        return None
-
-    records = odoo._query(
-        table,
-        "search_read",
-        [[("name", "=ilike", value)]],
-        {"fields": ["id", "name"], "limit": 1},
-    )
-    if not records:
-        return None
-    return records[0]["id"]
-
-
-def _find_tag_ids(odoo, tag_names: list[str]) -> list[int]:
-    ids: list[int] = []
-
-    for raw_tag in tag_names:
-        tag_name = _safe_text(raw_tag)
-        if not tag_name:
-            continue
-
-        records = odoo._query(
-            Table.TicketTag,
-            "search_read",
-            [[("name", "=ilike", tag_name)]],
-            {"fields": ["id", "name"], "limit": 1},
-        )
-        if records:
-            ids.append(records[0]["id"])
-
-    return ids
-
-
-def _get_ticket_field_names(odoo) -> set[str]:
-    fields_meta = odoo._query(
-        Table.Ticket,
-        "fields_get",
-        [],
-        {"attributes": ["string", "type"]},
-    )
-    return set(fields_meta.keys())
-
-
-def _dedupe_tags(tag_names: list[str]) -> list[str]:
-    seen: set[str] = set()
-    deduped: list[str] = []
-
-    for raw_tag in tag_names:
-        tag_name = _safe_text(raw_tag)
-        if not tag_name:
-            continue
-
-        key = tag_name.casefold()
-        if key in seen:
-            continue
-
-        seen.add(key)
-        deduped.append(tag_name)
-
-    return deduped
-
-
-def _build_ticket_defaults(
-    normalized_type: str,
-    raw_team: str | None,
-    raw_category: str | None,
-    raw_tags: list[str],
-    normalized_priority: str,
-) -> dict[str, Any]:
-    blueprint = DEFAULT_TICKET_BLUEPRINTS.get(
-        normalized_type,
-        DEFAULT_TICKET_BLUEPRINTS["discard"],
-    )
-
-    tag_names = list(raw_tags) if isinstance(raw_tags, list) else []
-    tag_names.extend(blueprint["default_tags"])
-
-    if normalized_priority == "alta":
-        tag_names.append("Urgente")
-
-    return {
-        "team_name": _safe_text(raw_team) or blueprint["team_name"],
-        "ticket_type_name": blueprint["ticket_type"],
-        "category_name": _safe_text(raw_category) or blueprint["category"],
-        "tag_names": _dedupe_tags(tag_names),
-        "priority_normalized": normalized_priority,
-        "priority": PRIORITY_TO_ODOO[normalized_priority],
-    }
-
-
-def _collect_missing_essential_fields(
-    company_name: str | None,
-    raw_type: str | None,
-) -> list[str]:
-    missing_fields: list[str] = []
-
-    if not _safe_text(company_name):
-        missing_fields.append("compania")
-
-    if not _safe_text(raw_type):
-        missing_fields.append("tipo de ticket")
-
-    return missing_fields
-
-
-async def normalize_email_node(
-    state: TicketAgentState,
-    config: RunnableConfig,
-) -> dict[str, Any]:
-    deps = _get_deps(config)
-
-    subject = state.get("email_subject", "") or ""
-    body = state.get("email_body", "") or ""
-    sender_email = state.get("sender_email", "") or ""
+async def normalize_email_node(state: TicketAgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Convierte el correo recibido en un objeto Ticket estructurado."""
+    subject = state.get("email_subject") or ""
+    body = state.get("email_body") or ""
+    sender_email = state.get("sender_email") or ""
     sender_name = state.get("sender_name")
 
-    user_prompt = f"""
-Asunto: {subject}
-Remitente email: {sender_email}
-Remitente nombre: {sender_name}
-Cuerpo:
-{body}
-""".strip()
-
-    response = await deps.llm.ainvoke(
-        [
-            SystemMessage(content=NORMALIZATION_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt),
-        ]
-    )
-
     try:
-        normalized = json.loads(response.content)
+        ticket = await _deps(config).structured_llm.ainvoke([
+            SystemMessage(content=NORMALIZATION_SYSTEM_PROMPT),
+            HumanMessage(content=(
+                f"Asunto: {subject}\n"
+                f"Remitente nombre: {sender_name}\n"
+                f"Remitente email: {sender_email}\n"
+                f"Cuerpo:\n{body}"
+            )),
+        ])
+        ticket = ticket if isinstance(ticket, Ticket) else Ticket.model_validate(ticket)
     except Exception as e:
-        return {"error": f"No se pudo parsear el JSON del LLM: {e}"}
+        return {"error": f"No se pudo estructurar el correo: {e}"}
 
-    title = _safe_text(normalized.get("title"))
-    description = _safe_text(normalized.get("description"))
+    title = _clean(ticket.title)
+    description = _clean(ticket.description)
 
     if not title:
-        return {"error": "El LLM no devolvió un title válido"}
+        return {"error": "El LLM no devolvió un título válido."}
     if not description:
-        return {"error": "El LLM no devolvió un description válido"}
-
-    normalized["title"] = title
-    normalized["description"] = description
-    normalized["customer_email"] = _safe_text(normalized.get("customer_email")) or _safe_text(sender_email)
-    normalized["company_name"] = _safe_text(normalized.get("company_name")) or _guess_company_name_from_email(sender_email)
-    normalized["partner_name"] = _safe_text(normalized.get("partner_name")) or _guess_partner_name(sender_name, sender_email)
-    normalized["team"] = _safe_text(normalized.get("team"))
-    normalized["ticket_type"] = _safe_text(normalized.get("ticket_type"))
-    normalized["category"] = _safe_text(normalized.get("category"))
-    normalized["stage"] = _safe_text(normalized.get("stage"))
-    normalized["priority"] = _safe_text(normalized.get("priority"))
-
-    tags = normalized.get("tags", [])
-    if not isinstance(tags, list):
-        tags = []
-    normalized["tags"] = [str(tag).strip() for tag in tags if str(tag).strip()]
+        return {"error": "El LLM no devolvió una descripción válida."}
 
     return {
-        "normalized_ticket": normalized,
-        "missing_fields": _collect_missing_essential_fields(
-            company_name=normalized.get("company_name"),
-            raw_type=normalized.get("ticket_type"),
-        ),
+        "ticket": ticket.model_copy(update={
+            "title": title,
+            "description": description,
+            "customer_email": _clean(ticket.customer_email) or _clean(sender_email),
+            "company_name": None,
+            "partner_name": None,
+            "team": _clean(ticket.team),
+            "ticket_type": _clean(ticket.ticket_type),
+            "category": _clean(ticket.category),
+            "priority": _clean(ticket.priority),
+            "tags": [_clean(t) for t in ticket.tags if _clean(t)],
+        }),
     }
 
 
-async def _run_tool_calls(response, tools: list) -> list[ToolMessage]:
-    tool_map = {t.name: t for t in tools}
-    results = []
-    for tc in getattr(response, "tool_calls", []):
-        tool = tool_map.get(tc["name"])
-        if tool:
-            try:
-                output = await tool.ainvoke(tc.get("args", {}))
-                results.append(ToolMessage(content=str(output), tool_call_id=tc.get("id", "")))
-            except Exception as e:
-                results.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc.get("id", "")))
-    return results
-
-
-# TOOL-CALLING: el LLM consulta Odoo para enriquecer el contexto del ticket.
-# Solo lectura — los errores son silenciosos para no bloquear el flujo principal.
-# Las mutaciones (crear partner, crear ticket) ocurren en los nodos siguientes.
-async def enrich_context_node(
-    state: TicketAgentState,
-    config: RunnableConfig,
-) -> dict[str, Any]:
-    if state.get("error"):
+async def resolve_sender_node(state: TicketAgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Resuelve la empresa y el nombre del contacto a partir del remitente."""
+    if state.get("error") or not state.get("ticket"):
         return {}
 
-    deps = _get_deps(config)
-    normalized = state.get("normalized_ticket", {})
-    company_name = normalized.get("company_name") or normalized.get("partner_name") or ""
-    customer_email = normalized.get("customer_email") or ""
+    deps = _deps(config)
+    ticket = state["ticket"]
+    sender_email = _clean(state.get("sender_email")) or ""
+    sender_name = _clean(state.get("sender_name"))
+    local_part, domain_hint = _split_email(sender_email)
 
-    prompt = (
-        f"Consulta si el cliente existe en Odoo y obtén su historial. "
-        f"Empresa: '{company_name}', email: '{customer_email}'."
-    )
+    all_companies: list[str] = []
 
     try:
-        tools = build_odoo_tools(deps.odoo_service)
-        llm_with_tools = deps.llm.bind_tools(tools)
-        response = await llm_with_tools.ainvoke([HumanMessage(content=prompt)])
-        tool_messages = await _run_tool_calls(response, tools)
-        return {"odoo_context": {"raw_results": [m.content for m in tool_messages]}}
+        records = deps.odoo_service.search_read(
+            Table.Contact,
+            [("is_company", "=", True)],
+            ["name"],
+            limit=200,
+        )
+        all_companies = [r["name"] for r in records if r.get("name")]
     except Exception:
-        return {"odoo_context": {}}
+        pass
 
+    company_name: str | None = None
 
-def ensure_partner_node(
-    state: TicketAgentState,
-    config: RunnableConfig,
-) -> dict[str, Any]:
-    if state.get("error"):
-        return {}
+    if domain_hint and all_companies:
+        try:
+            response = await deps.llm.ainvoke([HumanMessage(
+                content=COMPANY_MATCH_PROMPT.format(
+                    domain=domain_hint,
+                    companies="\n".join(f"- {c}" for c in all_companies),
+                )
+            )])
+            chosen = _clean(getattr(response, "content", None) or str(response))
+            if chosen and chosen.upper() != "NINGUNA" and chosen in all_companies:
+                company_name = chosen
+        except Exception:
+            pass
 
-    deps = _get_deps(config)
-    normalized = state["normalized_ticket"]
+    if not company_name and domain_hint:
+        company_name = domain_hint.capitalize()
 
-    customer_email = normalized.get("customer_email")
-    company_name = normalized.get("company_name")
+    partner_name = sender_name
 
-    # sin empresa ni email identificable no hay a quién asociar el ticket
-    if not customer_email and not company_name:
-        return {
-            "partner_id": None,
-            "company_is_new": False,
-            "debug_trace": {},
-            "normalized_ticket": normalized,
-        }
+    if not partner_name and local_part:
+        try:
+            response = await deps.llm.ainvoke([HumanMessage(
+                content=PARTNER_NAME_PROMPT.format(local_part=local_part)
+            )])
+            partner_name = _clean(getattr(response, "content", None) or str(response))
+        except Exception:
+            pass
 
-    odoo = deps.odoo_service._wrapper
-    debug_trace = _build_partner_debug_trace(
-        odoo,
-        company_name=company_name,
-        sender_email=customer_email,
-    )
+    missing_fields = []
 
-    existing_company = _find_company_partner(
-        odoo,
-        company_name=company_name,
-        sender_email=customer_email,
-    )
-    if existing_company:
-        normalized["company_name"] = existing_company["name"]
-        return {
-            "partner_id": existing_company["id"],
-            "company_is_new": False,
-            "debug_trace": {
-                **debug_trace,
-                "matched_company": existing_company,
-                "company_resolution": "existing",
-                "final_partner_id": existing_company["id"],
-            },
-            "normalized_ticket": normalized,
-        }
-
-    final_company_name = company_name or _guess_company_name_from_email(customer_email) or "Cliente nuevo"
-    company_vals: dict[str, Any] = {
-        "name": final_company_name,
-        "is_company": True,
-        "customer_rank": 1,
-    }
-    if customer_email:
-        company_vals["email"] = customer_email
-
-    partner_id = odoo._query(Table.Contact, "create", [company_vals])
-    normalized["company_name"] = final_company_name
+    if not company_name:
+        missing_fields.append("Compañía")
+    if not ticket.ticket_type:
+        missing_fields.append("Tipo de ticket")
 
     return {
-        "partner_id": partner_id,
-        "company_is_new": True,
-        "debug_trace": {
-            **debug_trace,
-            "matched_company": None,
-            "company_resolution": "created",
-            "created_company_name": final_company_name,
-            "final_partner_id": partner_id,
-        },
-        "normalized_ticket": normalized,
+        "ticket": ticket.model_copy(update={
+            "company_name": company_name,
+            "partner_name": partner_name,
+            "missing_fields": missing_fields,
+        }),
     }
 
 
-def resolve_ticket_fields_node(
-    state: TicketAgentState,
-    config: RunnableConfig,
-) -> dict[str, Any]:
-    if state.get("error"):
+async def ensure_partner_node(state: TicketAgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Busca la empresa en Odoo o la crea si no existe."""
+    if state.get("error") or not state.get("ticket"):
         return {}
 
-    deps = _get_deps(config)
-    odoo = deps.odoo_service._wrapper
-    normalized = state["normalized_ticket"]
+    service = _deps(config).odoo_service
+    ticket = state["ticket"]
+    email = str(ticket.customer_email) if ticket.customer_email else None
+    company_name = ticket.company_name
 
-    raw_team = normalized.get("team") or state.get("team_name")
-    raw_type = normalized.get("ticket_type")
-    raw_category = normalized.get("category")
-    raw_stage = normalized.get("stage")
-    raw_tags = normalized.get("tags") or []
-    raw_priority = normalized.get("priority")
+    if not email and not company_name:
+        return {"ticket": ticket}
 
-    normalized_type = normalize_ticket_type(raw_type or "")
-    normalized_priority = normalize_priority(raw_priority or "")
-    missing_fields = list(state.get("missing_fields", []))
+    results = service.find_company(company_name, exact=True, limit=1) if company_name else []
 
-    if state.get("company_is_new"):
-        raw_tags = list(raw_tags) + ["Cliente nuevo"]
-    if missing_fields:
-        raw_tags = list(raw_tags) + ["Faltan datos"]
-    ticket_defaults = _build_ticket_defaults(
-        normalized_type=normalized_type,
-        raw_team=raw_team,
-        raw_category=raw_category,
-        raw_tags=raw_tags,
-        normalized_priority=normalized_priority,
-    )
+    if not results and company_name:
+        results = service.find_company(company_name, exact=False, limit=1)
 
-    odoo_type_name = CANONICAL_TYPE_TO_ODOO_NAME.get(
-        normalized_type,
-        ticket_defaults["ticket_type_name"],
-    )
+    if results:
+        company = results[0]
+        return {
+            "ticket": ticket.model_copy(update={
+                "partner_id": company["id"],
+                "company_name": company["name"],
+                "company_is_new": False,
+            }),
+        }
 
-    team_id = _find_id_by_name(odoo, Table.TicketTeam, ticket_defaults["team_name"])
-    type_id = _find_id_by_name(odoo, Table.TicketType, odoo_type_name)
-    category_id = _find_id_by_name(odoo, Table.TicketCategory, ticket_defaults["category_name"])
-    stage_id = _find_id_by_name(odoo, Table.TicketStage, raw_stage)
-    tag_ids = _find_tag_ids(odoo, ticket_defaults["tag_names"])
+    final_name = company_name or "Cliente nuevo"
 
     return {
-        "missing_fields": missing_fields,
-        "resolved_fields": {
-            "team_id": team_id,
-            "type_id": type_id,
-            "category_id": category_id,
-            "stage_id": stage_id,
-            "tag_ids": tag_ids,
-            "team_name": ticket_defaults["team_name"],
-            "ticket_type_name": odoo_type_name,
-            "category_name": ticket_defaults["category_name"],
-            "tag_names": ticket_defaults["tag_names"],
-            "priority": ticket_defaults["priority"],
-            "ticket_type_normalized": normalized_type,
-            "priority_normalized": normalized_priority,
-        }
+        "ticket": ticket.model_copy(update={
+            "partner_id": service.create_company_contact(final_name, email=email),
+            "company_name": final_name,
+            "company_is_new": True,
+        }),
     }
 
 
-def create_ticket_node(
-    state: TicketAgentState,
-    config: RunnableConfig,
-) -> dict[str, Any]:
-    if state.get("error"):
+def resolve_ticket_fields_node(state: TicketAgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Traduce valores de negocio a IDs reales de Odoo."""
+    if state.get("error") or not state.get("ticket"):
         return {}
 
-    deps = _get_deps(config)
-    odoo = deps.odoo_service._wrapper
-    normalized = state["normalized_ticket"]
-    resolved = state.get("resolved_fields", {})
-    missing_fields = state.get("missing_fields", [])
+    service = _deps(config).odoo_service
+    ticket = state["ticket"]
 
-    existing_ticket_fields = _get_ticket_field_names(odoo)
+    normalized_type = normalize_ticket_type(ticket.ticket_type or "")
+    normalized_priority = normalize_priority(ticket.priority or "")
+    catalog_type = DEFAULT_TICKET.get(normalized_type, DEFAULT_TICKET["discard"])
 
-    ticket_vals: dict[str, Any] = {}
+    team_name = _clean(ticket.team) or _clean(state.get("team_name")) or catalog_type["team_name"]
+    ticket_type_name = CANONICAL_TYPE_TO_ODOO_NAME.get(normalized_type, catalog_type["ticket_type"])
+    category_name = _clean(ticket.category) or catalog_type["category"]
 
-    if "name" in existing_ticket_fields:
-        ticket_vals["name"] = normalized["title"]
+    tag_names = [
+        *ticket.tags,
+        *(["Cliente nuevo"] if ticket.company_is_new else []),
+        *(["Faltan datos"] if ticket.missing_fields else []),
+        *(["Urgente"] if normalized_priority == "alta" else []),
+    ]
 
-    if "description" in existing_ticket_fields:
-        description = normalized["description"]
-        if missing_fields:
-            description += (
-                "\n\nDatos que faltan:\n- "
-                + "\n- ".join(missing_fields)
-            )
-        ticket_vals["description"] = description
+    return {
+        "ticket": ticket.model_copy(update={
+            "priority_odoo": PRIORITY_TO_ODOO.get(normalized_priority, PRIORITY_TO_ODOO["media"]),
+            "team_id": service.find_record_id(Table.TicketTeam, team_name),
+            "type_id": service.find_record_id(Table.TicketType, ticket_type_name),
+            "category_id": service.find_record_id(Table.TicketCategory, category_name),
+            "tag_ids": service.find_record_ids(Table.TicketTag, tag_names),
+        }),
+    }
 
-    if "priority" in existing_ticket_fields:
-        ticket_vals["priority"] = resolved.get("priority", "1")
 
-    if state.get("partner_id") and "partner_id" in existing_ticket_fields:
-        ticket_vals["partner_id"] = state["partner_id"]
+def create_ticket_node(state: TicketAgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Construye el payload final y crea el ticket en Odoo."""
+    if state.get("error") or not state.get("ticket"):
+        return {}
 
-    customer_email = normalized.get("customer_email")
-    if customer_email and "partner_email" in existing_ticket_fields:
-        ticket_vals["partner_email"] = customer_email
+    service = _deps(config).odoo_service
+    ticket = state["ticket"]
+    allowed_fields = service.get_model_fields(Table.Ticket)
 
-    partner_name = normalized.get("partner_name")
-    if partner_name and "partner_name" in existing_ticket_fields:
-        ticket_vals["partner_name"] = partner_name
+    description = ticket.description
 
-    if resolved.get("team_id") and "team_id" in existing_ticket_fields:
-        ticket_vals["team_id"] = resolved["team_id"]
+    if ticket.missing_fields:
+        description += "\n\nDatos que faltan:\n- " + "\n- ".join(ticket.missing_fields)
 
-    if resolved.get("type_id") and "type_id" in existing_ticket_fields:
-        ticket_vals["type_id"] = resolved["type_id"]
+    payload = {
+        "name": ticket.title,
+        "description": description,
+        "priority": ticket.priority_odoo,
+        "partner_id": ticket.partner_id,
+        "partner_email": str(ticket.customer_email) if ticket.customer_email else None,
+        "partner_name": ticket.partner_name,
+        "team_id": ticket.team_id,
+        "type_id": ticket.type_id,
+        "category_id": ticket.category_id,
+        "tag_ids": [(6, 0, ticket.tag_ids)] if ticket.tag_ids else None,
+    }
 
-    if resolved.get("category_id") and "category_id" in existing_ticket_fields:
-        ticket_vals["category_id"] = resolved["category_id"]
-
-    if resolved.get("stage_id") and "stage_id" in existing_ticket_fields:
-        ticket_vals["stage_id"] = resolved["stage_id"]
-
-    if resolved.get("tag_ids") and "tag_ids" in existing_ticket_fields:
-        ticket_vals["tag_ids"] = [(6, 0, resolved["tag_ids"])]
+    ticket_vals = {
+        k: v
+        for k, v in payload.items()
+        if k in allowed_fields and v is not None
+    }
 
     if not ticket_vals.get("name"):
-        return {"error": "No se pudo construir el ticket: falta el campo name"}
+        return {"error": "No se pudo construir el ticket: falta el campo 'name'."}
 
-    ticket_id = odoo._query(Table.Ticket, "create", [ticket_vals])
     return {
-        "ticket_id": ticket_id,
+        "ticket_id": service.create_ticket_from_vals(ticket_vals),
         "ticket_vals": ticket_vals,
     }

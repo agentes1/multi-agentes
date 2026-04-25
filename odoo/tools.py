@@ -4,40 +4,31 @@ from odoo.service import OdooService
 
 
 def build_odoo_tools(service: OdooService) -> list[BaseTool]:
-    """Fábrica de LangChain tools de solo lectura sobre OdooService.
-
-    TOOL-CALLING — solo lectura.
-    El LLM decide cuándo y qué consultar según el contexto de la conversación.
-    Si una tool falla, no modifica nada en Odoo.
-
-    MUTACIONES — nodos hardcodeados del grafo (NO aquí).
-    Razón: crear tickets, órdenes y contactos debe ser determinista.
-    Un LLM que alucina no puede crear registros en producción de forma autónoma.
-    """
+    """Fábrica de tools de solo lectura para que el LLM consulte Odoo sin mutar datos."""
 
     @tool
     def buscar_productos(texto: str) -> list:
-        """Busca productos en el catálogo de Odoo por nombre o descripción (búsqueda parcial). Devuelve lista de dicts con claves: id, name, default_code, list_price, type. Devuelve [] si no hay coincidencias."""
+        """Busca productos por nombre o descripción y devuelve una lista de dicts."""
         return service.search_products(texto)
 
     @tool
     def obtener_producto(codigo: str) -> dict:
-        """Obtiene detalles completos de un producto por su código interno (default_code, ej: 'crm_base'). Devuelve dict con id, name, default_code, list_price, type. Devuelve {} si el código no existe."""
+        """Obtiene un producto por código interno. Devuelve {} si no existe."""
         return service.get_product_by_code(codigo) or {}
 
     @tool
     def listar_catalogo() -> list:
-        """Devuelve todos los productos disponibles en Odoo (máx 100). Cada elemento tiene: id, name, default_code, list_price."""
+        """Devuelve el catálogo de productos disponible en Odoo."""
         return service.list_catalog()
 
     @tool
     def buscar_cliente(nombre: str) -> dict:
-        """Busca si existe un cliente en Odoo por nombre (búsqueda parcial). Devuelve dict con id, name, email, phone, is_company. Devuelve {} si no existe."""
+        """Busca un cliente por nombre. Devuelve {} si no encuentra coincidencias."""
         return service.find_client(nombre) or {}
 
     @tool
     def historial_cliente(nombre: str) -> dict:
-        """Devuelve el historial completo de un cliente: órdenes de venta anteriores y tickets de soporte. Resultado: {"found": bool, "orders": [...], "tickets": [...]}. "found": false si el cliente no existe en Odoo."""
+        """Devuelve órdenes y tickets de un cliente. found=false si no existe."""
         client = service.find_client(nombre)
         if not client:
             return {"orders": [], "tickets": [], "found": False}
@@ -46,13 +37,13 @@ def build_odoo_tools(service: OdooService) -> list[BaseTool]:
 
     @tool
     def consultar_orden(order_id: int) -> dict:
-        """Obtiene el estado, total y fecha de una orden de venta por ID. Devuelve {"found": False} si no existe."""
+        """Obtiene una orden de venta. Devuelve found=false si no existe."""
         result = service.get_order(order_id)
         return result if result else {"found": False}
 
     @tool
     def listar_ordenes_cliente(nombre: str) -> list:
-        """Devuelve las últimas 10 órdenes de venta de un cliente buscando por nombre. Cada orden tiene: id, name, state, amount_total, date_order. Devuelve [] si el cliente no existe."""
+        """Devuelve las últimas órdenes de venta del cliente indicado."""
         client = service.find_client(nombre)
         if not client:
             return []
@@ -60,13 +51,13 @@ def build_odoo_tools(service: OdooService) -> list[BaseTool]:
 
     @tool
     def consultar_ticket(ticket_id: int) -> dict:
-        """Obtiene el estado y descripción de un ticket de soporte por ID. Devuelve {"found": False} si no existe."""
+        """Obtiene un ticket de soporte. Devuelve found=false si no existe."""
         result = service.get_ticket(ticket_id)
         return result if result else {"found": False}
 
     @tool
     def listar_tickets_cliente(nombre: str) -> list:
-        """Devuelve los últimos 10 tickets de soporte de un cliente buscando por nombre. Cada ticket tiene: id, name, stage_id, team_id. Devuelve [] si el cliente no existe."""
+        """Devuelve los últimos tickets del cliente indicado."""
         client = service.find_client(nombre)
         if not client:
             return []

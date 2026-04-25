@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
-from odoo.tools import build_odoo_tools
+
 from odoo.service import OdooService
+from odoo.tools import build_odoo_tools
 
 
 def _make_tools():

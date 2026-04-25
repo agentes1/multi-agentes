@@ -2,6 +2,12 @@ from agents.intake_agent.dependencies import build_ticket_dependencies
 from agents.intake_agent.graph import build_ticket_graph
 
 
+def _to_public_dict(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return value
+
+
 def build_ticket_agent():
     graph = build_ticket_graph()
     deps = build_ticket_dependencies()
@@ -37,12 +43,16 @@ async def run_ticket_pipeline(
             }
         },
     )
+    ticket = result.get("ticket")
+    ticket_dict = _to_public_dict(ticket) or {}
+
     return {
         "error": result.get("error"),
-        "normalized_ticket": result.get("normalized_ticket", {}),
-        "partner_id": result.get("partner_id"),
-        "debug_trace": result.get("debug_trace", {}),
-        "resolved_fields": result.get("resolved_fields", {}),
+        "ticket": ticket_dict,
+        "normalized_ticket": ticket_dict,
+        "partner_id": ticket_dict.get("partner_id"),
+        "company_is_new": ticket_dict.get("company_is_new", False),
+        "missing_fields": ticket_dict.get("missing_fields", []),
         "ticket_vals": result.get("ticket_vals", {}),
         "ticket_id": result.get("ticket_id"),
     }
