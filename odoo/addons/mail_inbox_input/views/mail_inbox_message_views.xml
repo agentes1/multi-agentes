@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_mail_inbox_message_tree" model="ir.ui.view">
+        <field name="name">mail.inbox.message.tree</field>
+        <field name="model">mail.inbox.message</field>
+        <field name="arch" type="xml">
+            <list string="Incoming Mails">
+                <field name="received_date"/>
+                <field name="subject"/>
+                <field name="email_from"/>
+                <field name="partner_id"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_mail_inbox_message_form" model="ir.ui.view">
+        <field name="name">mail.inbox.message.form</field>
+        <field name="model">mail.inbox.message</field>
+        <field name="arch" type="xml">
+            <form string="Incoming Mail">
+                <header>
+                    <button name="action_mark_processed"
+                            type="object"
+                            string="Mark as Processed"
+                            class="btn-primary"
+                            invisible="state == 'processed'"/>
+
+                    <button name="action_mark_error"
+                            type="object"
+                            string="Mark as Error"
+                            class="btn-secondary"
+                            invisible="state == 'error'"/>
+
+                    <button name="action_reset_to_new"
+                            type="object"
+                            string="Reset to New"
+                            class="btn-secondary"
+                            invisible="state == 'new'"/>
+
+                    <field name="state"
+                           widget="statusbar"
+                           statusbar_visible="new,processed,error"/>
+                </header>
+
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="subject"/>
+                            <field name="email_from"/>
+                            <field name="email_to"/>
+                            <field name="email_cc"/>
+                        </group>
+                        <group>
+                            <field name="received_date"/>
+                            <field name="partner_id"/>
+                            <field name="message_id"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Email Body">
+                            <field name="body_html" widget="html"/>
+                        </page>
+
+                        <page string="Agent Response">
+                            <field name="agent_response"/>
+                        </page>
+                    </notebook>
+                </sheet>
+
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_mail_inbox_message_search" model="ir.ui.view">
+        <field name="name">mail.inbox.message.search</field>
+        <field name="model">mail.inbox.message</field>
+        <field name="arch" type="xml">
+            <search string="Search Incoming Mails">
+                <field name="subject"/>
+                <field name="email_from"/>
+                <field name="partner_id"/>
+
+                <filter name="filter_new"
+                        string="New"
+                        domain="[('state', '=', 'new')]"/>
+
+                <filter name="filter_processed"
+                        string="Processed"
+                        domain="[('state', '=', 'processed')]"/>
+
+                <filter name="filter_error"
+                        string="Error"
+                        domain="[('state', '=', 'error')]"/>
+
+                <group expand="0" string="Group By">
+                    <filter name="group_state"
+                            string="State"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="group_partner"
+                            string="Partner"
+                            context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_mail_inbox_message" model="ir.actions.act_window">
+        <field name="name">Incoming Mails</field>
+        <field name="res_model">mail.inbox.message</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{}</field>
+    </record>
+
+    <menuitem id="menu_mail_inbox_root"
+              name="Mail Input"
+              sequence="30"/>
+
+    <menuitem id="menu_mail_inbox_messages"
+              name="Incoming Mails"
+              parent="menu_mail_inbox_root"
+              action="action_mail_inbox_message"
+              sequence="10"/>
+
+</odoo>
