@@ -73,3 +73,17 @@ class OdooAPIWrapper:
         try: return self._query(table, 'write', [ids, {'active': True}]) 
         except Fault as f: print(f.faultString, file=stderr)
         return False
+    
+    def set_param(self, key: str, value: str):
+        return self._query(
+            "ir.config_parameter",
+            "set_param",
+            [key, value]
+        )
+
+    def get_param(self, key: str):
+        return self._query(
+            "ir.config_parameter",
+            "get_param",
+            [key]
+        )
