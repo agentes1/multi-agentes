@@ -5,7 +5,7 @@ from os import getenv
 from halo import Halo
 
 # MODULES = ['base', 'sale_management', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive']
-MODULES = [ 'base', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive' ]
+MODULES = [ 'base', 'mail', 'fetchmail', 'google_gmail', 'stock', 'crm', 'helpdesk_mgmt', 'helpdesk_type', 'helpdesk_motive', "mail_inbox_input", ]
 
 PRODUCTS = [
     {"name": "CRM Base", "list_price": 1200, "description": "Gestión básica de leads, oportunidades y pipeline comercial", "default_code": "crm_base", "type": "service"},
@@ -30,8 +30,13 @@ TICKET_TAG = ["Urgente", "Cliente nuevo", "Pendiente validación", "Faltan datos
 if __name__ == "__main__":
     load_dotenv()
     odoo = OdooAPIWrapper(getenv('ODOO_BASE_URL'), getenv('ODOO_USERNAME'), getenv('ODOO_PASSWORD'), getenv('ODOO_DB'))
-
+    
     spinner = Halo(spinner='dots').start()
+    
+    spinner.text = 'Updating module list'
+    odoo._query('ir.module.module', 'update_list')
+
+    
     for i, m in enumerate(MODULES):
         spinner.text = f"{i+1}/{len(MODULES)} Installing {m}"
         odoo.install(m) 
@@ -40,6 +45,7 @@ if __name__ == "__main__":
     spinner.start()
 
     spinner.text = 'Populating Products'
+
     for p in PRODUCTS:
         if not odoo.get_by_value(Table.Product, p):
             odoo.create(Table.Product, [p])
@@ -73,5 +79,16 @@ if __name__ == "__main__":
     for tag in TICKET_TAG:
         if not odoo.get_by_value(Table.TicketTag, {'name': tag}):
             odoo.create(Table.TicketTag, [{'name': tag}])
+
+    spinner.text = "Configuring Gmail OAuth parameters"
+
+    client_id = getenv("GOOGLE_CLIENT_ID")
+    client_secret = getenv("GOOGLE_CLIENT_SECRET")
+
+    if client_id:
+        odoo.set_param("google_gmail_client_id", client_id)
+
+    if client_secret:
+        odoo.set_param("google_gmail_client_secret", client_secret)
 
     spinner.succeed("Odoo DB Populated")
