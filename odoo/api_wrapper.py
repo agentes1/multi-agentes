@@ -341,6 +341,89 @@ class OdooAPIWrapper:
         )
         return users[0] if users else None
 
+    def get_user_by_name(self, name):
+        users = self.search_read(
+            'res.users',
+            [('name', '=', name)],
+            fields=['id', 'login', 'partner_id', 'name'],
+            limit=1,
+        )
+        return users[0] if users else None
+
+    def create_user(self, data):
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'res.users',
+            'create',
+            [data],
+        )
+
+    def get_or_create_internal_user(self, login, name, email=None):
+        user = self.get_user_by_login(login)
+        if user:
+            return user
+
+        user = self.get_user_by_name(name)
+        if user:
+            return user
+
+        partner_email = email or login
+        partner = self.get_partner_by_email(partner_email)
+        if partner:
+            partner_id = partner['id']
+        else:
+            partner_id = self.create_contact(
+                {
+                    'name': name,
+                    'email': partner_email,
+                    'company_type': 'person',
+                }
+            )
+
+        user_id = self.create_user(
+            {
+                'name': name,
+                'login': login,
+                'partner_id': partner_id,
+                'email': partner_email,
+            }
+        )
+        return self.search_read(
+            'res.users',
+            [('id', '=', user_id)],
+            fields=['id', 'login', 'partner_id', 'name'],
+            limit=1,
+        )[0]
+
+    def set_system_parameter(self, key, value):
+        existing = self.search_read(
+            'ir.config_parameter',
+            [('key', '=', key)],
+            fields=['id', 'key', 'value'],
+            limit=1,
+        )
+        if existing:
+            self._models.execute_kw(
+                self._db,
+                self._uid,
+                self._password,
+                'ir.config_parameter',
+                'write',
+                [[existing[0]['id']], {'value': value}],
+            )
+            return existing[0]['id']
+
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'ir.config_parameter',
+            'create',
+            [{'key': key, 'value': value}],
+        )
+
     def get_partner_by_email(self, email):
         partners = self.search_read(
             'res.partner',

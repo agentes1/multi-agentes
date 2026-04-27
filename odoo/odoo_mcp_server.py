@@ -1,137 +1,197 @@
-import xmlrpc.client
+from __future__ import annotations
+
 from typing import Any
+
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("odoo_precios_reales")
+from odoo.api_wrapper import OdooAPIWrapper
+from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
-URL = "http://localhost:8069"
-DB = "odoo"
-USERNAME = "admin"
-PASSWORD = "admin"
+mcp = FastMCP("odoo_tools")
 
-def _get_odoo_connection():
-    common = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/common')
-    uid = common.authenticate(DB, USERNAME, PASSWORD, {})
-    if not uid:
-        raise Exception("Odoo authentication failed")
-    models = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/object')
-    return uid, models
 
-def execute(*args, **kwargs):
-    uid, models = _get_odoo_connection()
-    return models.execute_kw(DB, uid, PASSWORD, *args, **kwargs)
+def _get_wrapper() -> OdooAPIWrapper:
+    return OdooAPIWrapper(
+        url=ODOO_BASE_URL,
+        username=ODOO_USERNAME,
+        password=ODOO_PASSWORD,
+        db=ODOO_DB,
+    )
+
 
 @mcp.tool()
 def list_catalog() -> dict[str, Any]:
-    """Devuelve el catálogo completo de módulos presupuestables desde Odoo."""
-    domain = [('default_code', 'in', ['crm_base', 'email_ai', 'quotation_ai', 'odoo_connector', 'dashboard'])]
-    fields = ['name', 'list_price', 'description', 'default_code']
-    records = execute('product.product', 'search_read', [domain], {'fields': fields})
-    
-    catalogo = {}
-    for r in records:
-        code = r['default_code']
-        catalogo[code] = {
-            "name": r['name'],
-            "price": r['list_price'],
-            "description": r['description'] or ""
+    """Devuelve el catálogo completo de servicios presupuestables desde Odoo."""
+    wrapper = _get_wrapper()
+    products = wrapper.get_products(limit=200)
+    catalog: dict[str, Any] = {}
+    for product in products:
+        default_code = product.get("default_code")
+        if not default_code:
+            continue
+        catalog[str(default_code)] = {
+            "id": product["id"],
+            "name": product.get("name", ""),
+            "price": float(product.get("lst_price", 0) or 0),
+            "description": product.get("description", "") or "",
+            "default_code": default_code,
         }
-    return catalogo
+    return catalog
+
 
 @mcp.tool()
-def get_product(product_code: str) -> dict[str, Any]:
-    """Devuelve el detalle de un producto a partir de su código desde Odoo."""
-    catalogo = list_catalog()
-    if product_code not in catalogo:
-        raise ValueError(f"Producto no encontrado en Odoo: {product_code}")
-    return catalogo[product_code]
+def get_product_catalog_snapshot(product_ids: list[int]) -> list[dict[str, Any]]:
+    """Devuelve una vista resumida y enriquecida del catálogo para una lista de productos."""
+    wrapper = _get_wrapper()
+    snapshot: list[dict[str, Any]] = []
+    for product_id in product_ids:
+        product = wrapper.get_product(product_id)
+        if not product:
+            continue
+        snapshot.append(
+            {
+                "id": product["id"],
+                "name": product.get("name", ""),
+                "default_code": product.get("default_code", ""),
+                "price": float(product.get("lst_price", 0) or 0),
+                "description": product.get("description", "") or "",
+            }
+        )
+    return snapshot
+
+
+@mcp.tool()
+def find_products_by_text(text: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Busca productos de Odoo por texto libre."""
+    wrapper = _get_wrapper()
+    return wrapper.find_products_by_text(text, limit=limit)
+
+
+@mcp.tool()
+def get_product(product_id: int) -> dict[str, Any] | None:
+    """Obtiene el detalle de un producto por su id."""
+    wrapper = _get_wrapper()
+    return wrapper.get_product(product_id)
+
+
+@mcp.tool()
+def get_or_create_contact(company_name: str) -> int:
+    """Obtiene o crea el contacto del cliente y devuelve su id."""
+    wrapper = _get_wrapper()
+    return wrapper.get_or_create_contact(company_name)
+
 
 @mcp.tool()
 def get_customer_profile(company_name: str) -> dict[str, Any]:
-    """Devuelve información comercial básica del cliente desde Odoo."""
-    domain = [('name', '=ilike', company_name)]
-    records = execute('res.partner', 'search_read', [domain], {'fields': ['name', 'is_company'], 'limit': 1})
-    
-    # Defaults just like the mock
-    profile = {"segment": "desconocido", "discount_pct": 0, "currency": "EUR"}
-    
-    if records:
-        name = records[0]['name'].upper()
-        if 'ACME' in name:
-            profile['segment'] = 'pyme'
-            profile['discount_pct'] = 10
-        elif 'MEGACORP' in name:
-            profile['segment'] = 'enterprise'
-            profile['discount_pct'] = 15
-        else:
-            profile['segment'] = 'standard'
-    
-    return profile
+    """Devuelve informacion comercial resumida del cliente para personalizar la respuesta."""
+    wrapper = _get_wrapper()
+    partners = wrapper.search_read(
+        "res.partner",
+        [("name", "=ilike", company_name)],
+        fields=["id", "name", "email", "is_company"],
+        limit=1,
+    )
+    if not partners:
+        return {
+            "segment": "desconocido",
+            "known_customer": False,
+            "email": "",
+        }
+
+    partner = partners[0]
+    segment = "standard"
+    normalized_name = str(partner.get("name", "")).upper()
+    if "ACME" in normalized_name:
+        segment = "pyme"
+    elif "MEGACORP" in normalized_name:
+        segment = "enterprise"
+
+    return {
+        "segment": segment,
+        "known_customer": True,
+        "email": partner.get("email", "") or "",
+        "partner_id": partner["id"],
+    }
+
 
 @mcp.tool()
-def calculate_quote(product_codes: list[str], company_name: str) -> dict[str, Any]:
-    """Calcula subtotal, descuento y total final para la lista de módulos y genera la SO en Odoo."""
-    customer = get_customer_profile(company_name)
-    
-    # 1. Ensure customer exists or find them
-    domain = [('name', '=ilike', company_name)]
-    partner_ids = execute('res.partner', 'search', [domain], {'limit': 1})
-    if not partner_ids:
-        partner_id = execute('res.partner', 'create', [{'name': company_name, 'is_company': True}])
-    else:
-        partner_id = partner_ids[0]
+def create_sale_order(partner_id: int) -> int:
+    """Crea una cabecera de presupuesto en Odoo."""
+    wrapper = _get_wrapper()
+    return wrapper.create_sale_order(partner_id=partner_id)
 
-    # 2. Build order lines
-    order_lines = []
-    lines_output = []
-    subtotal = 0
 
-    for code in product_codes:
-        p_records = execute('product.product', 'search_read', [[('default_code', '=', code)]], {'fields': ['id', 'name', 'list_price'], 'limit': 1})
-        if not p_records:
+@mcp.tool()
+def create_sale_order_line(order_id: int, product_id: int, quantity: int = 1) -> int:
+    """Añade una línea a un presupuesto existente."""
+    wrapper = _get_wrapper()
+    return wrapper.create_sale_order_line(
+        order_id=order_id,
+        product_id=product_id,
+        quantity=quantity,
+    )
+
+
+@mcp.tool()
+def get_sale_order(order_id: int) -> dict[str, Any] | None:
+    """Lee la cabecera de un presupuesto existente."""
+    wrapper = _get_wrapper()
+    return wrapper.get_sale_order(order_id)
+
+
+@mcp.tool()
+def get_sale_order_lines(order_id: int) -> list[dict[str, Any]]:
+    """Lee las líneas de un presupuesto existente."""
+    wrapper = _get_wrapper()
+    return wrapper.get_sale_order_lines(order_id)
+
+
+@mcp.tool()
+def find_related_products(product_ids: list[int], limit: int = 3) -> list[dict[str, Any]]:
+    """Sugiere productos relacionados a partir de un conjunto de productos ya seleccionados."""
+    wrapper = _get_wrapper()
+    selected_products = []
+    selected_codes = set()
+    for product_id in product_ids:
+        product = wrapper.get_product(product_id)
+        if not product:
             continue
-        p = p_records[0]
-        
-        # apply discount
-        discount = customer.get('discount_pct', 0.0)
-        
-        # Add to Odoo sale order lines
-        # command 0 is to create a new record
-        order_lines.append((0, 0, {
-            'product_id': p['id'],
-            'product_uom_qty': 1,
-            'price_unit': p['list_price'],
-            'discount': discount,
-        }))
-        
-        lines_output.append({
-            "code": code,
-            "name": p['name'],
-            "unit_price": p['list_price']
-        })
-        subtotal += p['list_price']
+        selected_products.append(product)
+        default_code = product.get("default_code")
+        if default_code:
+            selected_codes.add(str(default_code).lower())
 
-    discount_pct = customer["discount_pct"]
-    discount_amount = round(subtotal * discount_pct / 100, 2)
-    total = round(subtotal - discount_amount, 2)
+    suggestions: list[dict[str, Any]] = []
+    preferred_terms = set()
+    for product in selected_products:
+        name = str(product.get("name", "")).lower()
+        if "crm" in name:
+            preferred_terms.update({"ventas", "sales", "helpdesk"})
+        if "automatizacion" in name or "comercial" in name:
+            preferred_terms.update({"crm", "helpdesk"})
+        if "helpdesk" in name or "soporte" in name:
+            preferred_terms.update({"crm", "ventas"})
 
-    # Create the sale order in Odoo
-    if order_lines:
-        so_id = execute('sale.order', 'create', [{
-            'partner_id': partner_id,
-            'order_line': order_lines
-        }])
-    
-    return {
-        "company_name": company_name,
-        "currency": customer["currency"],
-        "segment": customer["segment"],
-        "discount_pct": discount_pct,
-        "subtotal": subtotal,
-        "discount_amount": discount_amount,
-        "total": total,
-        "lines": lines_output,
-    }
+    for term in preferred_terms:
+        for product in wrapper.find_products_by_text(term, limit=limit):
+            default_code = str(product.get("default_code", "")).lower()
+            if not default_code or default_code in selected_codes:
+                continue
+            if any(existing["id"] == product["id"] for existing in suggestions):
+                continue
+            suggestions.append(
+                {
+                    "id": product["id"],
+                    "name": product.get("name", ""),
+                    "default_code": product.get("default_code", ""),
+                    "price": float(product.get("lst_price", 0) or 0),
+                }
+            )
+            if len(suggestions) >= limit:
+                return suggestions
+
+    return suggestions
+
 
 if __name__ == "__main__":
     mcp.run()

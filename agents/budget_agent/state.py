@@ -18,6 +18,8 @@ class BudgetState(TypedDict, total=False):
     sale_order_id: int
     # resumen simple del presupuesto creado
     quote_summary: dict[str, Any]
+    # requisitos que no se han podido mapear a producto real
+    unmatched_requirements: list[str]
 
     # error si algo falla durante el flujo
     error: str

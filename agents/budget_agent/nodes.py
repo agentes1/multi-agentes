@@ -1,4 +1,4 @@
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from agents.budget_agent.dependencies import BudgetDependencies
@@ -17,6 +17,7 @@ def _get_deps(config: RunnableConfig) -> BudgetDependencies:
 # error si no hay requisitos utilizables
 async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
+    tools = deps.tools
 
     normalized_request = state["normalized_request"]
     requirements = normalized_request.get("requirements", [])
@@ -38,7 +39,7 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
             if not value:
                 continue
 
-            matches = deps.odoo_wrapper.find_products_by_text(value, limit=5)
+            matches = tools.find_products_by_text(value, limit=5)
 
             # si hay coincidencias, usamos la primera
             if matches:
@@ -84,12 +85,13 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
 # se usa el company_name del json normalizado
 async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
+    tools = deps.tools
 
     normalized_request = state["normalized_request"]
     company_name = normalized_request.get("company_name", "Desconocido")
 
     try:
-        partner_id = deps.odoo_wrapper.get_or_create_contact(company_name)
+        partner_id = tools.get_or_create_contact(company_name)
     except Exception as e:
         return {
             "error": f"Error al obtener o crear el contacto en Odoo: {e}",
@@ -108,6 +110,7 @@ async def ensure_partner_node(state: BudgetState, config: RunnableConfig) -> dic
 # por simplicidad, añade una línea por producto con cantidad 1
 async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
+    tools = deps.tools
 
     normalized_request = state["normalized_request"]
     company_name = normalized_request.get("company_name", "Desconocido")
@@ -116,18 +119,19 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
 
     try:
         # crea la cabecera del presupuesto
-        sale_order_id = deps.odoo_wrapper.create_sale_order(partner_id=partner_id)
+        sale_order_id = tools.create_sale_order(partner_id=partner_id)
 
         # añade líneas al presupuesto usando directamente los productos ya resueltos desde Odoo
         for product in selected_products:
-            deps.odoo_wrapper.create_sale_order_line(
+            tools.create_sale_order_line(
                 order_id=sale_order_id,
                 product_id=product["id"],
                 quantity=1,
             )
 
         # lee el presupuesto ya creado para devolver un resumen útil
-        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        order = tools.get_sale_order(sale_order_id)
+        order_lines = tools.get_sale_order_lines(sale_order_id)
 
     except Exception as e:
         return {
@@ -145,6 +149,7 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
             }
             for product in selected_products
         ],
+        "order_lines": order_lines,
         "subtotal": float(order.get("amount_untaxed", 0)),
         "total": float(order.get("amount_total", 0)),
         "currency": "EUR",
@@ -162,6 +167,107 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
         "sale_order_id": sale_order_id,
         "quote_summary": quote_summary,
         "error": None,
+    }
+
+
+async def compose_budget_reply_node(state: BudgetState, config: RunnableConfig) -> dict:
+    deps = _get_deps(config)
+    tools = deps.tools
+    normalized_request = state["normalized_request"]
+    quote_summary = state["quote_summary"]
+    unmatched_requirements = state.get("unmatched_requirements", [])
+
+    company_name = normalized_request.get("company_name") or quote_summary.get(
+        "company_name", "cliente"
+    )
+    project_summary = normalized_request.get("project_summary", "").strip()
+    selected_products = quote_summary.get("selected_products", [])
+    product_names = [product.get("name", "").strip() for product in selected_products if product]
+    product_ids = [product.get("id") for product in selected_products if product.get("id")]
+    total = quote_summary.get("total", 0)
+    currency = quote_summary.get("currency", "EUR")
+    sale_order_id = quote_summary.get("sale_order_id")
+    order_lines = quote_summary.get("order_lines", [])
+    customer_profile = tools.get_customer_profile(company_name)
+    catalog_snapshot = tools.get_product_catalog_snapshot(product_ids) if product_ids else []
+    related_products = tools.find_related_products(product_ids, limit=2) if product_ids else []
+    system_prompt = (
+        "Eres un asistente comercial que responde en espanol de forma clara y profesional. "
+        "Redacta un mensaje breve y natural para el cliente usando solo la informacion proporcionada. "
+        "No inventes servicios, precios, ids ni datos que no esten en el contexto. "
+        "Menciona el presupuesto creado, el total, los servicios incluidos y sugiere un siguiente paso. "
+        "Si hay productos relacionados, puedes sugerirlos de forma opcional y prudente."
+    )
+    user_prompt = "\n".join(
+        [
+            f"Cliente: {company_name}",
+            f"Resumen de solicitud: {project_summary or 'Sin resumen adicional'}",
+            f"Servicios incluidos: {', '.join(product_names) or 'No disponible'}",
+            f"Perfil cliente: {customer_profile}",
+            f"Snapshot catalogo: {catalog_snapshot}",
+            f"Lineas del presupuesto: {order_lines}",
+            f"Referencia del presupuesto: {sale_order_id}",
+            f"Importe total: {total} {currency}",
+            f"Productos relacionados sugeridos: {related_products or 'Ninguno'}",
+            (
+                "Conceptos no resueltos: "
+                + (", ".join(unmatched_requirements) if unmatched_requirements else "Ninguno")
+            ),
+            "Escribe una respuesta final lista para enviar en el chat.",
+        ]
+    )
+
+    try:
+        response = await deps.llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
+        )
+        reply_text = getattr(response, "content", "") or ""
+    except Exception:
+        related_names = [item.get("name", "").strip() for item in related_products if item]
+        fallback_lines = [
+            f"Hola {company_name},",
+            "",
+            "He generado un presupuesto inicial en Odoo con la informacion detectada en tu solicitud.",
+            f"Referencia del presupuesto: {sale_order_id}",
+            f"Importe total estimado: {total} {currency}",
+        ]
+        if product_names:
+            fallback_lines.extend(
+                [
+                    "",
+                    "Servicios incluidos:",
+                    *[f"- {name}" for name in product_names],
+                ]
+            )
+        if unmatched_requirements:
+            fallback_lines.extend(
+                [
+                    "",
+                    "Conceptos a revisar para afinar el alcance:",
+                    *[f"- {item}" for item in unmatched_requirements],
+                ]
+            )
+        if related_names:
+            fallback_lines.extend(
+                [
+                    "",
+                    "Como posible ampliacion futura, tambien podrian encajar:",
+                    *[f"- {name}" for name in related_names],
+                ]
+            )
+        fallback_lines.extend(
+            [
+                "",
+                "Si quieres, puedo ayudarte a revisar el alcance funcional o recoger mas detalle para ajustar la propuesta.",
+            ]
+        )
+        reply_text = "\n".join(fallback_lines)
+
+    return {
+        "messages": [AIMessage(content=reply_text.strip())],
     }
 
 # nodo terminal de error: devuelve el error de forma controlada

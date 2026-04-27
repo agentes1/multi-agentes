@@ -37,6 +37,42 @@ _STOPWORDS = {
     "y",
 }
 
+_BUDGET_COMMERCIAL_TERMS = {
+    "presupuesto",
+    "precio",
+    "coste",
+    "costo",
+    "cotizacion",
+    "cotización",
+    "propuesta",
+}
+
+_BUDGET_SCOPE_TERMS = {
+    "crm",
+    "erp",
+    "odoo",
+    "implantar",
+    "implantacion",
+    "implantación",
+    "modulos",
+    "módulos",
+    "automatizacion",
+    "automatización",
+}
+
+_ISSUE_BLOCKER_TERMS = {
+    "error",
+    "problema",
+    "incidencia",
+    "falla",
+    "fallo",
+    "bug",
+    "no funciona",
+    "roto",
+    "bloqueado",
+    "bloquea",
+}
+
 
 @dataclass(frozen=True)
 class RouteMatch:
@@ -72,6 +108,9 @@ class SemanticTicketRouter:
     def __call__(self, text: str) -> RouteMatch:
         normalized_text = _normalize_text(text)
         text_tokens = _tokenize(text)
+        priority_match = self._match_priority_route(normalized_text, text_tokens)
+        if priority_match is not None:
+            return priority_match
         best_match = RouteMatch(name=discard_route.name, score=0.0, utterance=None)
 
         for route in self._routes:
@@ -87,6 +126,36 @@ class SemanticTicketRouter:
                 return RouteMatch(name=discard_route.name, score=best_match.score, utterance=None)
 
         return best_match
+
+    def _match_priority_route(
+        self,
+        normalized_text: str,
+        text_tokens: set[str],
+    ) -> RouteMatch | None:
+        budget_route = next((route for route in self._routes if route.name == "budget"), None)
+        if not budget_route:
+            return None
+
+        commercial_hits = sum(
+            1 for term in _BUDGET_COMMERCIAL_TERMS if _normalize_text(term) in normalized_text
+        )
+        scope_hits = sum(
+            1 for term in _BUDGET_SCOPE_TERMS if _normalize_text(term) in normalized_text
+        )
+        issue_hits = sum(
+            1 for term in _ISSUE_BLOCKER_TERMS if _normalize_text(term) in normalized_text
+        )
+        total_keyword_hits = len(text_tokens & _tokenize(" ".join(budget_route.keywords)))
+
+        if issue_hits >= 1 and commercial_hits == 0:
+            return None
+
+        if (commercial_hits >= 1 and scope_hits >= 1) or (
+            commercial_hits >= 1 and total_keyword_hits >= 2
+        ):
+            return RouteMatch(name="budget", score=1.0, utterance="priority_budget_match")
+
+        return None
 
     def _score_route(
         self,

@@ -1,14 +1,10 @@
-# api.py
-# servidor HTTP: expone el pipeline como endpoint REST
-# cada canal de entrada (email, chat, webhook) llama a POST /process
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from polling import TicketPollingService
-from pipeline import run_pipeline
-from webhooks import build_ticket_webhook_orchestrator
+from assistant_discuss import build_discuss_message_orchestrator
+from assistant_entry import build_ticket_entry_orchestrator
 
 app = FastAPI(title="Multi-agente presupuestos")
 
@@ -20,87 +16,86 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# esquema de entrada: acepta cualquier canal (email, chat, etc)
-class ProcessRequest(BaseModel):
-    source_input: dict
-    thread_id: str | None = None  # opcional: para rastrear sesiones concretas
-
-
-# esquema de respuesta para documentación automática en /docs
-class ProcessResponse(BaseModel):
-    ok: bool
-    thread_id: str | None = None
-    stage: str | None = None  # qué agente falló (solo si ok=False)
-    error: str | None = None  # mensaje de error (solo si ok=False)
-    validation_notes: list[str] = []  # avisos no bloqueantes del intake
-    normalized_request: dict = {}
-    quote_result: dict = {}
-    final_text: str = ""
-
-
-class TicketWebhookRequest(BaseModel):
-    ticket_id: int
+class AssistantTicketEntryRequest(BaseModel):
+    ticket_id: int | None = None
+    title: str = ""
+    description: str = ""
+    partner_name: str = ""
+    partner_email: str = ""
     thread_id: str | None = None
 
 
-class TicketWebhookResponse(BaseModel):
+class AssistantTicketEntryResponse(BaseModel):
     ok: bool
-    stage: str | None = None
-    error: str | None = None
     route_name: str | None = None
     agent_name: str | None = None
-    ticket: dict = {}
+    reply_text: str = ""
     normalized_request: dict = {}
-    assistant_reply: str = ""
     quote_summary: dict = {}
-    chat_channel: dict = {}
-    chat_message_id: int | None = None
+    error: str | None = None
     trace: list[str] = []
 
 
-class TicketPollingRequest(BaseModel):
-    limit: int = 50
-    thread_prefix: str = "ticket-poll"
+class AssistantDiscussMessageRequest(BaseModel):
+    ticket_id: int | None = None
+    ticket_title: str = ""
+    channel_id: int | None = None
+    channel_name: str = ""
+    message_id: int | None = None
+    author_name: str = ""
+    author_email: str = ""
+    body: str = ""
+    thread_id: str | None = None
 
 
-class TicketPollingResponse(BaseModel):
-    seen_ticket_ids: list[int] = []
-    new_ticket_ids: list[int] = []
-    processed_count: int
-    results: list[dict] = []
+class AssistantDiscussMessageResponse(BaseModel):
+    ok: bool
+    route_name: str | None = None
+    agent_name: str | None = None
+    reply_text: str = ""
+    normalized_request: dict = {}
+    quote_summary: dict = {}
+    error: str | None = None
+    trace: list[str] = []
 
 
-@app.post("/process", response_model=ProcessResponse)
-async def process(request: ProcessRequest):
-    result = await run_pipeline(
-        source_input=request.source_input,
+@app.post("/assistant/ticket-entry", response_model=AssistantTicketEntryResponse)
+async def assistant_ticket_entry(request: AssistantTicketEntryRequest):
+    ticket = {
+        "id": request.ticket_id,
+        "name": request.title,
+        "description": request.description,
+        "partner_name": request.partner_name,
+        "partner_email": request.partner_email,
+    }
+    result = await build_ticket_entry_orchestrator().handle_ticket_entry(
+        ticket=ticket,
         thread_id=request.thread_id,
     )
-    # usamos 400 para errores de negocio y reservamos 422 para errores de validación Pydantic
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result)
     return result
 
 
-@app.post("/webhooks/odoo/tickets", response_model=TicketWebhookResponse)
-async def odoo_ticket_webhook(request: TicketWebhookRequest):
-    result = await build_ticket_webhook_orchestrator().handle_ticket_created(
-        ticket_id=request.ticket_id,
+@app.post("/assistant/discuss-message", response_model=AssistantDiscussMessageResponse)
+async def assistant_discuss_message(request: AssistantDiscussMessageRequest):
+    payload = {
+        "ticket_id": request.ticket_id,
+        "ticket_title": request.ticket_title,
+        "channel_id": request.channel_id,
+        "channel_name": request.channel_name,
+        "message_id": request.message_id,
+        "author_name": request.author_name,
+        "author_email": request.author_email,
+        "body": request.body,
+    }
+    result = await build_discuss_message_orchestrator().handle_discuss_message(
+        payload=payload,
         thread_id=request.thread_id,
     )
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result)
     return result
-
-
-@app.post("/polling/odoo/tickets", response_model=TicketPollingResponse)
-async def poll_odoo_tickets(request: TicketPollingRequest):
-    service = TicketPollingService()
-    return await service.poll_new_tickets(
-        limit=request.limit,
-        thread_prefix=request.thread_prefix,
-    )
 
 
 # endpoint de salud para comprobar que el servidor está vivo
