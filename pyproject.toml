@@ -1,7 +1,19 @@
+# ── Definición del proyecto ─────────────────────────────────────────
+[project]
+name = "multi-agentes"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+
+
+# ── Configuración de setuptools ─────────────────────────────────────
+[tool.setuptools.packages.find]
+include = ["agents*", "routing*", "shared*", "services*", "schemas*"]
+
+
 # ── Ruff: linter y formateador ────────────────────────────────────────────────
 [tool.ruff]
 line-length = 100        # máximo de caracteres por línea
-target-version = "py311" # versión mínima de Python objetivo
+target-version = "py313" # versión mínima de Python objetivo
 force-exclude = true     # respeta los excludes aunque se pase el fichero explícitamente
 
 [tool.ruff.lint]
@@ -18,7 +30,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "schemas", "services", "shared"] # paquetes propios del proyecto
+known-first-party = ["agents", "schemas", "services", "shared", "routing"]
 
 [tool.ruff.format]
 quote-style = "double" # comillas dobles en strings
@@ -28,7 +40,7 @@ line-ending = "lf"     # saltos de línea Unix (evita problemas en Windows/Mac)
 
 # ── Mypy: comprobación estática de tipos ──────────────────────────────────────
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 warn_return_any = true        # avisa si una función devuelve Any implícitamente
 warn_unused_configs = true    # avisa si hay opciones de mypy que no hacen nada
 disallow_untyped_defs = true  # obliga a tipar todos los argumentos y returns

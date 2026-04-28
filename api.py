@@ -1,13 +1,24 @@
-# api.py
-# servidor HTTP: expone el pipeline de tickets como endpoint REST
+"""API HTTP principal del proyecto.
+
+Este archivo expone los tres puntos de entrada externos del sistema:
+- ticket creado manualmente en Odoo
+- mensaje nuevo en Discuss
+- correo entrante procesado por mail_inbox_input
+
+Cada endpoint delega la lógica real en un orquestador de orchestration/,
+de modo que la API se mantenga como una capa fina de entrada/salida.
+"""
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from pipeline import run_ticket_pipeline
+from orchestration.assistant_discuss import build_discuss_message_orchestrator
+from orchestration.assistant_email import build_incoming_email_orchestrator
+from orchestration.assistant_entry import build_ticket_entry_orchestrator
 
-app = FastAPI(title="Multi-agente tickets")
+app = FastAPI(title="Multi-agente presupuestos")
 
 # permite llamadas desde herramientas externas y scripts locales
 app.add_middleware(
@@ -17,38 +28,138 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# esquema de entrada: representa un correo listo para procesar
-class ProcessRequest(BaseModel):
-    email_subject: str
-    email_body: str
-    sender_email: str
-    sender_name: str | None = None
-    team_name: str | None = None
-
-
-# esquema de respuesta: refleja el estado real del pipeline actual
-class ProcessResponse(BaseModel):
-    error: str | None = None
-    normalized_ticket: dict = {}
-    partner_id: int | None = None
-    resolved_fields: dict = {}
-    ticket_vals: dict = {}
+class AssistantTicketEntryRequest(BaseModel):
+    # Payload que Odoo envía cuando ya existe un ticket y hay que enrutarlo.
     ticket_id: int | None = None
+    title: str = ""
+    description: str = ""
+    partner_name: str = ""
+    partner_email: str = ""
+    thread_id: str | None = None
 
 
-@app.post("/process", response_model=ProcessResponse)
-async def process(request: ProcessRequest):
-    result = await run_ticket_pipeline(
-        email_subject=request.email_subject,
-        email_body=request.email_body,
-        sender_email=request.sender_email,
-        sender_name=request.sender_name,
-        team_name=request.team_name,
+class AssistantTicketEntryResponse(BaseModel):
+    ok: bool
+    route_name: str | None = None
+    agent_name: str | None = None
+    reply_text: str = ""
+    normalized_request: dict = {}
+    quote_summary: dict = {}
+    error: str | None = None
+    trace: list[str] = []
+
+
+class AssistantDiscussMessageRequest(BaseModel):
+    # Payload para continuar una conversación ya abierta en Discuss.
+    ticket_id: int | None = None
+    ticket_title: str = ""
+    channel_id: int | None = None
+    channel_name: str = ""
+    message_id: int | None = None
+    author_name: str = ""
+    author_email: str = ""
+    body: str = ""
+    thread_id: str | None = None
+
+
+class AssistantDiscussMessageResponse(BaseModel):
+    ok: bool
+    route_name: str | None = None
+    agent_name: str | None = None
+    reply_text: str = ""
+    normalized_request: dict = {}
+    quote_summary: dict = {}
+    error: str | None = None
+    trace: list[str] = []
+
+
+class AssistantIncomingEmailRequest(BaseModel):
+    # Payload que llega desde mail_inbox_input antes de crear el ticket en Odoo.
+    inbox_id: int | None = None
+    subject: str = ""
+    email_from: str = ""
+    email_to: str = ""
+    email_cc: str = ""
+    body_html: str = ""
+    body: str = ""
+    message_id: str = ""
+    sender_name: str = ""
+    received_date: str = ""
+    thread_id: str | None = None
+
+
+class AssistantIncomingEmailResponse(BaseModel):
+    ok: bool
+    ticket_id: int | None = None
+    final_text: str = ""
+    normalized_request: dict = {}
+    ticket_payload: dict = {}
+    warnings: list[str] = []
+    error: str | None = None
+    trace: list[str] = []
+
+
+@app.post("/assistant/ticket-entry", response_model=AssistantTicketEntryResponse)
+async def assistant_ticket_entry(request: AssistantTicketEntryRequest):
+    # Convierte el payload HTTP a un ticket simple y lo entrega al semantic router.
+    ticket = {
+        "id": request.ticket_id,
+        "name": request.title,
+        "description": request.description,
+        "partner_name": request.partner_name,
+        "partner_email": request.partner_email,
+    }
+    result = await build_ticket_entry_orchestrator().handle_ticket_entry(
+        ticket=ticket,
+        thread_id=request.thread_id,
     )
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
-    # usamos 400 para errores de negocio y reservamos 422 para errores de validación Pydantic
-    if result.get("error"):
+
+@app.post("/assistant/discuss-message", response_model=AssistantDiscussMessageResponse)
+async def assistant_discuss_message(request: AssistantDiscussMessageRequest):
+    # Reutiliza el mismo flujo de decisión de agentes, pero para mensajes de chat.
+    payload = {
+        "ticket_id": request.ticket_id,
+        "ticket_title": request.ticket_title,
+        "channel_id": request.channel_id,
+        "channel_name": request.channel_name,
+        "message_id": request.message_id,
+        "author_name": request.author_name,
+        "author_email": request.author_email,
+        "body": request.body,
+    }
+    result = await build_discuss_message_orchestrator().handle_discuss_message(
+        payload=payload,
+        thread_id=request.thread_id,
+    )
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/assistant/incoming-email", response_model=AssistantIncomingEmailResponse)
+async def assistant_incoming_email(request: AssistantIncomingEmailRequest):
+    # Entrada del flujo de correo: intake crea el ticket y luego Odoo continúa el resto.
+    payload = {
+        "inbox_id": request.inbox_id,
+        "subject": request.subject,
+        "email_from": request.email_from,
+        "email_to": request.email_to,
+        "email_cc": request.email_cc,
+        "body_html": request.body_html,
+        "body": request.body,
+        "message_id": request.message_id,
+        "sender_name": request.sender_name,
+        "received_date": request.received_date,
+    }
+    result = await build_incoming_email_orchestrator().handle_incoming_email(
+        payload=payload,
+        thread_id=request.thread_id,
+    )
+    if not result["ok"]:
         raise HTTPException(status_code=400, detail=result)
     return result
 

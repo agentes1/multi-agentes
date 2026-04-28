@@ -1,46 +1,57 @@
+# Definimos workflow de los agentes
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from agents.budget_agent.nodes import (
-    normalize_budget_node,
-    resolve_products_node,
+    compose_budget_reply_node,
+    create_odoo_quote_node,
     ensure_partner_node,
-    create_quote_node,
     error_node,
+    prepare_budget_node,
 )
 from agents.budget_agent.state import BudgetState
 
 
-def _route_after_normalize(state: BudgetState) -> str:
-    return "error_node" if state.get("error") else "resolve_products_node"
-
-
-def _route_after_products(state: BudgetState) -> str:
+# routing tras prepare_budget_node: si hay error cortocircuita al nodo de error
+def _route_after_prepare(state: BudgetState) -> str:
     return "error_node" if state.get("error") else "ensure_partner_node"
 
 
+# routing tras ensure_partner_node: si hay error cortocircuita al nodo de error
 def _route_after_partner(state: BudgetState) -> str:
-    return "error_node" if state.get("error") else "create_quote_node"
+    return "error_node" if state.get("error") else "create_odoo_quote_node"
 
 
-def _route_after_quote(state: BudgetState) -> str:
-    return "error_node" if state.get("error") else END
-
-
+# workflow agente presupuestos
+# nodos: funciones (agentes)
+# edges: orden de ejecución
+# state: datos que fluyen entre nodos
 def build_budget_graph():
     builder = StateGraph(BudgetState)
 
-    builder.add_node("normalize_budget_node", normalize_budget_node)
-    builder.add_node("resolve_products_node", resolve_products_node)
+    # nodo preparación productos
+    builder.add_node("prepare_budget_node", prepare_budget_node)
+    # nodo que crea o recupera el partner en odoo
     builder.add_node("ensure_partner_node", ensure_partner_node)
-    builder.add_node("create_quote_node", create_quote_node)
+    # nodo que crea el presupuesto en odoo
+    builder.add_node("create_odoo_quote_node", create_odoo_quote_node)
+    # nodo que redacta una respuesta util para el usuario
+    builder.add_node("compose_budget_reply_node", compose_budget_reply_node)
+    # nodo terminal cuando el flujo no puede continuar
     builder.add_node("error_node", error_node)
-
-    builder.add_edge(START, "normalize_budget_node")
-    builder.add_conditional_edges("normalize_budget_node", _route_after_normalize)
-    builder.add_conditional_edges("resolve_products_node", _route_after_products)
+    # orden del flujo
+    builder.add_edge(START, "prepare_budget_node")
+    # edge condicional: ¿hay productos válidos?
+    builder.add_conditional_edges("prepare_budget_node", _route_after_prepare)
+    # edge condicional: ¿se pudo obtener o crear el cliente?
     builder.add_conditional_edges("ensure_partner_node", _route_after_partner)
-    builder.add_conditional_edges("create_quote_node", _route_after_quote)
+    # tras crear el presupuesto, se compone una respuesta final mas rica
+    builder.add_edge("create_odoo_quote_node", "compose_budget_reply_node")
+    builder.add_edge("compose_budget_reply_node", END)
+    # si algo falla, termina en el nodo de error
     builder.add_edge("error_node", END)
+    # sistema de checkpoints en memoria RAM
+    checkpointer = InMemorySaver()
 
-    return builder.compile(checkpointer=InMemorySaver())
+    # convertir en grafo ejecutable
+    return builder.compile(checkpointer=checkpointer)

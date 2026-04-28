@@ -24,10 +24,6 @@ def normalize_urgency(value: str) -> str:
     return URGENCY_SYNONYMS.get(normalized, "media")
 
 
-def normalize_priority(value: str) -> str:
-    return normalize_urgency(value)
-
-
 # sinónimos para clasificar el tipo de solicitud
 TICKET_TYPE_SYNONYMS = {
     # presupuesto
@@ -59,36 +55,3 @@ TICKET_TYPE_SYNONYMS = {
 def normalize_ticket_type(value: str) -> str:
     normalized = str(value).lower().strip()
     return TICKET_TYPE_SYNONYMS.get(normalized, "discard")
-
-CANONICAL_TYPE_TO_ODOO_NAME = {
-    "budget": "Presupuesto",
-    "issue": "Soporte",
-    "discard": "Soporte",
-}
-
-PRIORITY_TO_ODOO = {
-    "baja": "0",
-    "media": "1",
-    "alta": "2",
-}
-
-DEFAULT_TICKET = {
-    "budget": {
-        "team_name": "Presupuestos",
-        "ticket_type": "Presupuesto",
-        "category": "Consulta presupuesto",
-        "default_tags": [],
-    },
-    "issue": {
-        "team_name": "Soporte cliente",
-        "ticket_type": "Soporte",
-        "category": "Problema",
-        "default_tags": [],
-    },
-    "discard": {
-        "team_name": "Soporte cliente",
-        "ticket_type": "Soporte",
-        "category": "Interno",
-        "default_tags": [],
-    },
-}

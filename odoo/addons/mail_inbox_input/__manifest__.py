@@ -1,15 +1,14 @@
 {
     "name": "Mail Inbox Input",
     "version": "18.0.1.0.0",
-    "summary": "Guarda correos entrantes en un modelo propio de Odoo",
+    "summary": "Guarda correos entrantes y los envía al intake agent",
     "description": """
-        Módulo para simular una bandeja de entrada en Odoo.
-        Los correos recibidos por el servidor entrante se crean como registros
-        en el modelo mail.inbox.message.
+        Módulo para registrar correos entrantes en Odoo y delegar su
+        procesamiento al intake agent del backend.
     """,
-    "author": "Agentes 1",
+    "author": "Agentes 1 + Local Custom",
     "category": "Productivity",
-    "depends": ["base","mail"],
+    "depends": ["base", "mail"],
     "data": [
         "security/ir.model.access.csv",
         "views/mail_inbox_message_views.xml",

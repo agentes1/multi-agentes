@@ -1,0 +1,57 @@
+services:
+  assistant-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: assistant-backend
+    depends_on:
+      - db
+      - web
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./shared/.env
+    environment:
+      URL: http://web:8069
+      DB: ${ODOO_DB:-odoo}
+      USERNAME: ${ODOO_USERNAME:-odoo}
+      PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
+      ODOO_BASE_URL: http://web:8069/xmlrpc/2
+      ODOO_DB: ${ODOO_DB:-odoo}
+      ODOO_USERNAME: ${ODOO_USERNAME:-odoo}
+      ODOO_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
+    volumes:
+      - .:/app
+
+  web:
+    image: odoo:18.0
+    container_name: odoo-web
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      - ./odoo/addons:/mnt/extra-addons
+    environment:
+      HOST: db
+      USER: odoo
+      PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
+      HELP_DESK_VIRTUAL_ASSISTANT_TICKET_ENTRY_URL: http://assistant-backend:8000/assistant/ticket-entry
+      HELP_DESK_VIRTUAL_ASSISTANT_DISCUSS_MESSAGE_URL: http://assistant-backend:8000/assistant/discuss-message
+      MAIL_INBOX_INPUT_BACKEND_INCOMING_EMAIL_URL: http://assistant-backend:8000/assistant/incoming-email
+
+  db:
+    image: postgres:15
+    container_name: odoo-db
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
+      POSTGRES_USER: odoo
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data/pgdata
+
+volumes:
+  odoo-web-data:
+  odoo-db-data:

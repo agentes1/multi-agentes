@@ -11,7 +11,7 @@ Incluye:
 ## 1) Requisitos previos
 
 - Windows, macOS o Linux.
-- Python 3.11+.
+- Python 3.13.x.
 - Git.
 - (Opcional para flujo completo real) Ollama en ejecución con el modelo configurado (`llama3.1` por defecto).
 
@@ -29,13 +29,23 @@ Crear y activar entorno virtual.
 Windows PowerShell:
 
 ```powershell
-python -m venv .venv
+# Si tienes Python Launcher en Windows:
+py -3.13 -m venv .venv
+
+# Si no tienes `py`, usa el ejecutable de Python 3.13 instalado:
+# python3.13 -m venv .venv
+
 .\.venv\Scripts\Activate.ps1
 ```
+
+Si ya tenías un entorno virtual creado con otra versión de Python, recréalo con Python 3.13 antes de reinstalar dependencias.
 
 Instalar dependencias:
 
 ```bash
+python --version
+# esperado: Python 3.13.x
+
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
@@ -47,6 +57,47 @@ python api.py
 ```
 
 API docs: http://localhost:8000/docs
+
+## 3.1) Arranque con Docker
+
+Si quieres levantar Odoo, Postgres y el backend del asistente juntos:
+
+```bash
+docker compose up --build
+```
+
+Servicios expuestos:
+
+- Odoo: `http://localhost:8069`
+- Backend asistente: `http://localhost:8000`
+
+Detalles de esta configuración:
+
+- Odoo carga los addons desde [odoo/addons](C:/Users/Alejandro/multi-agentes/multi-agentes/odoo/addons).
+- El backend se construye desde [Dockerfile](C:/Users/Alejandro/multi-agentes/multi-agentes/Dockerfile).
+- Dentro de Docker, Odoo llama al backend por `http://assistant-backend:8000`.
+- Dentro de Docker, el backend llama a Odoo por `http://web:8069/xmlrpc/2`.
+
+Si necesitas ajustar variables locales, puedes partir de [.env.example](C:/Users/Alejandro/multi-agentes/multi-agentes/.env.example).
+
+## 3.2) Bootstrap inicial de Odoo
+
+Para preparar una base nueva de Odoo con los modulos, datos base, catalogo de helpdesk y el usuario `Asistente Virtual`, usa un unico comando:
+
+```powershell
+$env:PYTHONPATH=(Get-Location).Path
+.\venv\Scripts\python.exe .\scripts\bootstrap_odoo.py
+```
+
+Este script:
+
+- instala modulos clave de Odoo y helpdesk
+- instala `helpdesk_virtual_assistant`
+- crea productos de referencia para el agente de presupuestos
+- crea contactos de ejemplo
+- crea equipos, tipos, categorias, estados y tags de helpdesk
+- crea el usuario interno `Asistente Virtual`
+- configura las URLs internas del backend para ticket entry y discuss message
 
 Healthcheck:
 

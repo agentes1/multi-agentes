@@ -11,6 +11,7 @@
                 <field name="email_from"/>
                 <field name="partner_id"/>
                 <field name="state"/>
+                <field name="generated_ticket_id"/>
             </list>
         </field>
     </record>
@@ -56,6 +57,7 @@
                             <field name="received_date"/>
                             <field name="partner_id"/>
                             <field name="message_id"/>
+                            <field name="generated_ticket_id"/>
                         </group>
                     </group>
 

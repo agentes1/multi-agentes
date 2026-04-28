@@ -4,35 +4,18 @@ import pytest
 
 from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.graph import build_budget_graph
-from odoo.api import OdooAPIWrapper
-from odoo.service import OdooService
-from odoo.helpers import Table
+from odoo.api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
 
-class MockLLM:
-    """Mock LLM that returns no tool calls — lets enrich_context_node skip enrichment."""
-
-    def bind_tools(self, tools):
-        return self
-
-    async def ainvoke(self, messages):
-        class _Response:
-            content = ""
-            tool_calls = []
-        return _Response()
-
-
 def _build_deps() -> BudgetDependencies:
-    wrapper = OdooAPIWrapper(
-        url=ODOO_BASE_URL,
-        username=ODOO_USERNAME,
-        password=ODOO_PASSWORD,
-        db=ODOO_DB,
-    )
     return BudgetDependencies(
-        llm=MockLLM(),
-        odoo_service=OdooService(wrapper),
+        odoo_wrapper=OdooAPIWrapper(
+            url=ODOO_BASE_URL,
+            username=ODOO_USERNAME,
+            password=ODOO_PASSWORD,
+            db=ODOO_DB,
+        ),
     )
 
 
@@ -45,33 +28,16 @@ def _base_config(deps: BudgetDependencies) -> dict:
     }
 
 
-def _cleanup(deps: BudgetDependencies, sale_order_id: int | None, company_name: str | None) -> None:
-    if sale_order_id:
-        try:
-            deps.odoo_service._wrapper._query(Table.SaleOrder, "action_cancel", [[sale_order_id]])
-            deps.odoo_service._wrapper.delete(Table.SaleOrder, [sale_order_id])
-        except Exception:
-            pass
-    if company_name:
-        try:
-            partner = deps.odoo_service.find_client(company_name)
-            if partner:
-                deps.odoo_service._wrapper.delete(Table.Contact, [partner["id"]])
-        except Exception:
-            pass
-
-
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_json_crea_presupuesto_real_en_odoo():
     graph = build_budget_graph()
     deps = _build_deps()
-    company_name = "Acme Presupuestos SL"
 
     result = await graph.ainvoke(
         {
             "normalized_request": {
-                "company_name": company_name,
+                "company_name": "Acme Presupuestos SL",
                 "project_summary": "Implantación básica para soporte y ventas",
                 "requirements": ["helpdesk", "crm"],
                 "urgency": "media",
@@ -83,21 +49,33 @@ async def test_json_crea_presupuesto_real_en_odoo():
     sale_order_id = result.get("sale_order_id")
 
     try:
-        assert result.get("error") is None
+        assert result["error"] is None
         assert sale_order_id is not None
         assert isinstance(sale_order_id, int)
 
+        assert result["normalized_request"]["company_name"] == "Acme Presupuestos SL"
+        assert "helpdesk" in result["normalized_request"]["requirements"]
+        assert "crm" in result["normalized_request"]["requirements"]
+
+        assert isinstance(result["selected_products"][0], dict)
+        assert "id" in result["selected_products"][0]
+
         summary = result["quote_summary"]
-        assert summary["company_name"] == company_name
+        assert summary["company_name"] == "Acme Presupuestos SL"
         assert summary["sale_order_id"] == sale_order_id
         assert isinstance(summary["subtotal"], float)
         assert isinstance(summary["total"], float)
         assert summary["currency"] == "EUR"
 
-        order = deps.odoo_service.get_sale_order(sale_order_id)
-        assert order.get("id") == sale_order_id or "amount_total" in order
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+        assert order["partner_id"]
+        assert order["amount_total"] >= 0
+
     finally:
-        _cleanup(deps, sale_order_id, company_name)
+        if sale_order_id:
+            print("fin")
 
 
 @pytest.mark.integration
@@ -105,12 +83,11 @@ async def test_json_crea_presupuesto_real_en_odoo():
 async def test_json_con_varios_requisitos_crea_presupuesto_en_odoo():
     graph = build_budget_graph()
     deps = _build_deps()
-    company_name = "Beta Industrial SL"
 
     result = await graph.ainvoke(
         {
             "normalized_request": {
-                "company_name": company_name,
+                "company_name": "Beta Industrial SL",
                 "project_summary": "Proyecto con varias áreas funcionales",
                 "requirements": ["crm", "sales", "helpdesk"],
                 "urgency": "alta",
@@ -122,7 +99,7 @@ async def test_json_con_varios_requisitos_crea_presupuesto_en_odoo():
     sale_order_id = result.get("sale_order_id")
 
     try:
-        assert result.get("error") is None
+        assert result["error"] is None
         assert sale_order_id is not None
 
         selected_products = result["selected_products"]
@@ -131,10 +108,16 @@ async def test_json_con_varios_requisitos_crea_presupuesto_en_odoo():
 
         summary = result["quote_summary"]
         assert summary["sale_order_id"] == sale_order_id
-        assert summary["company_name"] == company_name
+        assert summary["company_name"] == "Beta Industrial SL"
         assert summary["total"] >= 0
+
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+
     finally:
-        _cleanup(deps, sale_order_id, company_name)
+        if sale_order_id:
+            print("fin")
 
 
 @pytest.mark.integration
@@ -142,6 +125,7 @@ async def test_json_con_varios_requisitos_crea_presupuesto_en_odoo():
 async def test_json_cliente_nuevo_crea_partner_y_presupuesto():
     graph = build_budget_graph()
     deps = _build_deps()
+
     company_name = "Cliente Nuevo Presupuesto Test SL"
 
     result = await graph.ainvoke(
@@ -159,17 +143,26 @@ async def test_json_cliente_nuevo_crea_partner_y_presupuesto():
     sale_order_id = result.get("sale_order_id")
 
     try:
-        assert result.get("error") is None
+        assert result["error"] is None
         assert sale_order_id is not None
 
-        partner = deps.odoo_service.find_client(company_name)
-        assert partner is not None
-        assert company_name.lower() in partner["name"].lower()
+        partners = deps.odoo_wrapper.search_read(
+            "res.partner",
+            [("name", "=", company_name)],
+            fields=["id", "name"],
+            limit=10,
+        )
 
-        order = deps.odoo_service.get_sale_order(sale_order_id)
-        assert "amount_total" in order
+        assert partners
+        assert any(p["name"] == company_name for p in partners)
+
+        order = deps.odoo_wrapper.get_sale_order(sale_order_id)
+        assert order is not None
+        assert order["id"] == sale_order_id
+
     finally:
-        _cleanup(deps, sale_order_id, company_name)
+        if sale_order_id:
+            print("fin")
 
 
 @pytest.mark.integration
@@ -190,7 +183,7 @@ async def test_json_sin_requisitos_devuelve_error_y_no_crea_presupuesto():
         config=_base_config(deps),
     )
 
-    assert result.get("error") is not None
+    assert result["error"] is not None
     assert "no contiene requisitos" in result["error"].lower()
     assert result.get("sale_order_id") is None
 
@@ -213,6 +206,6 @@ async def test_json_con_requisitos_no_mapeables_devuelve_error():
         config=_base_config(deps),
     )
 
-    assert result.get("error") is not None
-    assert "no se encontraron productos" in result["error"].lower()
+    assert result["error"] is not None
+    assert "no se encontraron productos presupuestables" in result["error"].lower()
     assert result.get("sale_order_id") is None

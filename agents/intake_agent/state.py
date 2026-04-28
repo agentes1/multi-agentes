@@ -1,16 +1,32 @@
-from typing import Any, TypedDict
+from typing import Annotated, TypedDict
 
-from .schemas import Ticket
+from langgraph.graph.message import (
+    add_messages,  # para añadir el valor de las claves de estado en vez de sobreescribir
+)
 
 
-class TicketAgentState(TypedDict, total=False):
-    email_subject: str
-    email_body: str
+# definir estado compartido del grafo para intake
+class IntakeState(TypedDict, total=False):
+    # guarda el historial de mensajes del flujo
+    messages: Annotated[list, add_messages]
+    # entrada cruda original (email, chat, etc)
+    source_input: dict
+    # texto unificado extraído de la entrada
+    extracted_text: str
+    # datos básicos del remitente para flujos de email
+    sender_name: str
     sender_email: str
-    sender_name: str | None
-    team_name: str | None
-
-    ticket: Ticket
-    ticket_vals: dict[str, Any]
-    ticket_id: int | None
+    # solicitud estructurada generada por el LLM
+    normalized_request: dict
+    # tipo de ticket detectado por el agente: budget, issue o discard
+    ticket_type: str
+    # datos finales preparados para crear el ticket en Odoo
+    ticket_payload: dict
+    # id del ticket creado en Odoo
+    ticket_id: int
+    # texto final del resultado del flujo
+    final_text: str
+    # warnings, faltan datos importantes en el ticket
+    warnings: list[str]
+    # error producido en el flujo, None o ausencia si no hay error
     error: str | None
