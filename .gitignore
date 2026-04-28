@@ -1,5 +1,4 @@
 # Entorno virtual
-.venv/
 venv/
 
 # Cachés
@@ -11,3 +10,7 @@ __pycache__/
 # Variables sensibles
 .env
 .env.*
+
+# Herramientas locales
+.claude/
+.deepeval/
