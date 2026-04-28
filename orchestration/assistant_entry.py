@@ -1,4 +1,13 @@
 from __future__ import annotations
+"""Orquestación del flujo inicial desde ticket ya creado.
+
+Este archivo se usa cuando Odoo crea un helpdesk.ticket manualmente.
+Su responsabilidad es pequeña y muy concreta:
+- convertir el ticket a texto enrutable
+- decidir si entra por budget o fallback general
+- invocar el agente adecuado
+- devolver una respuesta lista para publicar en Discuss
+"""
 
 from dataclasses import dataclass
 
@@ -6,31 +15,33 @@ from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.dependencies import build_dependencies as build_budget_deps
 from agents.budget_agent.graph import build_budget_graph
 from agents.general_agent.service import GENERAL_AGENT_NAME, build_general_response
+from orchestration.ticket_utils import build_budget_request_from_ticket, build_ticket_text
 from routing.semantic_router import router
-from ticket_utils import build_budget_request_from_ticket
 
 
 @dataclass(frozen=True)
-class DiscussMessageOrchestrator:
+class TicketEntryOrchestrator:
+    # Se inyecta el builder de dependencias para poder testear el flujo sin Odoo real.
     budget_deps_builder: callable
 
-    async def handle_discuss_message(
+    async def handle_ticket_entry(
         self,
-        payload: dict,
+        ticket: dict,
         thread_id: str | None = None,
         model: str | None = None,
     ) -> dict:
-        trace = ["discuss_message_received"]
-        text = build_discuss_routing_text(payload)
-        route_name = router(text).name
+        # El trace se devuelve a la API para poder depurar el recorrido del flujo.
+        trace = ["ticket_received"]
+        route_name = router(build_ticket_text(ticket)).name
         trace.append(f"route_decided:{route_name}")
 
         if route_name in {"discard", "issue"}:
+            reply_text = build_general_response()
             return {
                 "ok": True,
                 "route_name": route_name,
                 "agent_name": GENERAL_AGENT_NAME,
-                "reply_text": build_general_response(),
+                "reply_text": reply_text,
                 "normalized_request": {},
                 "quote_summary": {},
                 "trace": trace + [f"agent_completed:{GENERAL_AGENT_NAME}"],
@@ -47,13 +58,7 @@ class DiscussMessageOrchestrator:
                 "trace": trace + ["no_agent_selected"],
             }
 
-        ticket = {
-            "id": payload.get("ticket_id"),
-            "name": payload.get("ticket_title", ""),
-            "description": payload.get("body", ""),
-            "partner_name": payload.get("author_name", ""),
-            "partner_email": payload.get("author_email", ""),
-        }
+        # Solo cuando la ruta es budget convertimos el ticket al formato del agente.
         normalized_request = build_budget_request_from_ticket(ticket)
         if not normalized_request["requirements"]:
             return {
@@ -63,7 +68,7 @@ class DiscussMessageOrchestrator:
                 "reply_text": "",
                 "normalized_request": normalized_request,
                 "quote_summary": {},
-                "error": "El mensaje fue clasificado como budget, pero no se detectaron requisitos fiables.",
+                "error": "El ticket fue clasificado como budget, pero no se detectaron requisitos fiables.",
                 "trace": trace + ["budget_request_incomplete"],
             }
 
@@ -102,11 +107,5 @@ class DiscussMessageOrchestrator:
         }
 
 
-def build_discuss_routing_text(payload: dict) -> str:
-    body = payload.get("body", "")
-    author = payload.get("author_email", "")
-    return f"Autor: {author}\nMensaje discuss: {body}".strip()
-
-
-def build_discuss_message_orchestrator() -> DiscussMessageOrchestrator:
-    return DiscussMessageOrchestrator(budget_deps_builder=build_budget_deps)
+def build_ticket_entry_orchestrator() -> TicketEntryOrchestrator:
+    return TicketEntryOrchestrator(budget_deps_builder=build_budget_deps)

@@ -23,7 +23,7 @@ def _get_wrapper() -> OdooAPIWrapper:
 def list_catalog() -> dict[str, Any]:
     """Devuelve el catálogo completo de servicios presupuestables desde Odoo."""
     wrapper = _get_wrapper()
-    products = wrapper.get_products(limit=200)
+    products = wrapper.list_catalog(limit=200)
     catalog: dict[str, Any] = {}
     for product in products:
         default_code = product.get("default_code")
@@ -37,6 +37,13 @@ def list_catalog() -> dict[str, Any]:
             "default_code": default_code,
         }
     return catalog
+
+
+@mcp.tool()
+def find_company(name: str, exact: bool = False, limit: int = 5) -> list[dict[str, Any]]:
+    """Busca empresas en Odoo por nombre para enriquecer el contexto del agente."""
+    wrapper = _get_wrapper()
+    return wrapper.find_company(name=name, exact=exact, limit=limit)
 
 
 @mcp.tool()
@@ -112,6 +119,13 @@ def get_customer_profile(company_name: str) -> dict[str, Any]:
         "email": partner.get("email", "") or "",
         "partner_id": partner["id"],
     }
+
+
+@mcp.tool()
+def get_customer_history(partner_id: int, limit: int = 10) -> dict[str, Any]:
+    """Recupera historial comercial básico del cliente en Odoo."""
+    wrapper = _get_wrapper()
+    return wrapper.get_client_history(partner_id=partner_id, limit=limit)
 
 
 @mcp.tool()

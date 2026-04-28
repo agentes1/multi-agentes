@@ -1,9 +1,11 @@
 import json
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from agents.intake_agent.dependencies import IntakeDependencies
+from agents.intake_agent.schemas import IntakeRequestSchema
 from agents.intake_agent.state import IntakeState
 from shared.catalog import normalize_urgency, normalize_ticket_type
 
@@ -16,6 +18,40 @@ def _get_deps(config: RunnableConfig) -> IntakeDependencies:
     return deps
 
 
+def _clean(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _extract_sender_parts(raw_sender: str, sender_name: str = "") -> tuple[str, str]:
+    provided_name = _clean(sender_name)
+    raw_sender = _clean(raw_sender)
+    if not raw_sender:
+        return provided_name, ""
+
+    match = re.match(r'(?P<name>.*?)\s*<(?P<email>[^>]+)>', raw_sender)
+    if match:
+        display_name = _clean(match.group("name")).strip('"')
+        email = _clean(match.group("email")).lower()
+        return provided_name or display_name, email
+
+    if "@" in raw_sender:
+        return provided_name, raw_sender.lower()
+
+    return provided_name or raw_sender, ""
+
+
+def _infer_company_name(parsed_company: str, sender_email: str) -> str:
+    parsed_company = _clean(parsed_company)
+    if parsed_company:
+        return parsed_company
+
+    if "@" not in sender_email:
+        return "Desconocido"
+
+    domain = sender_email.split("@", 1)[1].split(".", 1)[0].strip()
+    return domain.capitalize() if domain else "Desconocido"
+
+
 
 # convierte diferentes formatos de entrada (email, chat, etc) a texto uniforme
 # error si la entrada está vacía o el canal no tiene campos mínimos
@@ -26,7 +62,10 @@ async def prepare_input_node(state: IntakeState, config: RunnableConfig) -> dict
     if channel == "email":
         subject = source_input.get("subject", "")
         body = source_input.get("body", "")
-        sender = source_input.get("from", "")
+        sender_name, sender_email = _extract_sender_parts(
+            raw_sender=source_input.get("from", "") or source_input.get("email_from", ""),
+            sender_name=source_input.get("sender_name", "") or source_input.get("author_name", ""),
+        )
 
         # validación: un email sin asunto y sin cuerpo no tiene información útil
         if not subject and not body:
@@ -36,7 +75,8 @@ async def prepare_input_node(state: IntakeState, config: RunnableConfig) -> dict
 
         text = f"""
 Canal: email
-Remitente: {sender}
+Remitente nombre: {sender_name}
+Remitente email: {sender_email}
 Asunto: {subject}
 Mensaje:
 {body}
@@ -74,6 +114,8 @@ Mensaje:
     return {
         "messages": [AIMessage(content="Entrada convertida a texto unificado")],
         "extracted_text": text.strip(),
+        "sender_name": sender_name if channel == "email" else source_input.get("user_name", ""),
+        "sender_email": sender_email if channel == "email" else "",
         "error": None,
     }
 
@@ -83,6 +125,8 @@ Mensaje:
 async def extract_request_node(state: IntakeState, config: RunnableConfig) -> dict:
     deps = _get_deps(config)
     extracted_text = state["extracted_text"]
+    sender_name = _clean(state.get("sender_name", ""))
+    sender_email = _clean(state.get("sender_email", ""))
 
     prompt = f"""
 Eres un agente que analiza mensajes de clientes y los transforma en solicitudes estructuradas para procesarlas después.
@@ -117,24 +161,10 @@ Texto del cliente:
     content = response.content if isinstance(response.content, str) else str(response.content)
 
     try:
-        parsed = json.loads(content)
+        parsed = IntakeRequestSchema.model_validate(json.loads(content)).model_dump()
     except Exception:
         return {
             "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
-        }
-
-    # validación mínima de estructura
-    required_keys = {
-        "company_name",
-        "project_summary",
-        "requirements",
-        "urgency",
-        "ticket_type",
-        "missing_information",
-    }
-    if not required_keys.issubset(parsed.keys()):
-        return {
-            "error": "El JSON generado no contiene todos los campos obligatorios.",
         }
 
     # normaliza urgencia a valores cerrados
@@ -144,11 +174,9 @@ Texto del cliente:
     parsed["ticket_type"] = normalize_ticket_type(parsed.get("ticket_type", ""))
 
     # limpieza mínima para evitar estructuras inesperadas
-    if not isinstance(parsed.get("requirements"), list):
-        parsed["requirements"] = []
-
-    if not isinstance(parsed.get("missing_information"), list):
-        parsed["missing_information"] = []
+    parsed["company_name"] = _infer_company_name(parsed.get("company_name", ""), sender_email)
+    parsed["sender_name"] = sender_name
+    parsed["sender_email"] = sender_email
 
     return {
         "messages": [
@@ -170,6 +198,8 @@ async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dic
     normalized_request = state["normalized_request"]
 
     company_name = normalized_request.get("company_name", "Desconocido")
+    sender_name = normalized_request.get("sender_name", "").strip()
+    sender_email = normalized_request.get("sender_email", "").strip()
     project_summary = normalized_request.get("project_summary", "").strip()
     requirements = normalized_request.get("requirements", [])
     urgency = normalized_request.get("urgency", "media")
@@ -222,6 +252,8 @@ async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dic
     # descripción corta y útil en texto plano
     description_lines = [
         f"Empresa: {company_name}",
+        *(["Contacto: " + sender_name] if sender_name else []),
+        *(["Email: " + sender_email] if sender_email else []),
         "",
         f"Resumen: {project_summary}",
     ]

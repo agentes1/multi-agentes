@@ -10,6 +10,8 @@ _logger = logging.getLogger(__name__)
 
 
 class HelpdeskTicket(models.Model):
+    # Extensión de helpdesk.ticket que conecta el alta de tickets con el backend Python.
+    # Este archivo solo se ocupa del arranque del flujo: abrir chat y pedir primera respuesta.
     _inherit = "helpdesk.ticket"
 
     @api.model_create_multi
@@ -17,6 +19,7 @@ class HelpdeskTicket(models.Model):
         tickets = super().create(vals_list)
         for ticket in tickets:
             try:
+                # Cada ticket nuevo arranca automáticamente una conversación en Discuss.
                 ticket._open_virtual_assistant_chat()
             except Exception:
                 _logger.exception(
@@ -48,6 +51,7 @@ class HelpdeskTicket(models.Model):
         channel_name = f"Ticket {self.id} - Asistente Virtual"
         channel_model = self.env["discuss.channel"].sudo()
 
+        # Se reutiliza el chat si ya existe para evitar duplicados al recrear o editar datos.
         channel = channel_model.search(
             [("name", "=", channel_name)],
             limit=1,
@@ -65,6 +69,7 @@ class HelpdeskTicket(models.Model):
 
             channel = channel_model.create(create_vals)
 
+        # Primer mensaje fijo: confirma recepción antes de consultar al semantic router.
         initial_message = self._build_virtual_assistant_message()
         channel.with_user(assistant_user).message_post(
             body=initial_message,
@@ -73,6 +78,7 @@ class HelpdeskTicket(models.Model):
             subtype_xmlid="mail.mt_comment",
         )
 
+        # Segundo mensaje: respuesta real del backend según ruta/agente seleccionado.
         message = self._fetch_virtual_assistant_message()
         if message and message != initial_message:
             channel.with_user(assistant_user).message_post(
@@ -110,6 +116,7 @@ class HelpdeskTicket(models.Model):
     def _fetch_virtual_assistant_message(self):
         self.ensure_one()
         endpoint_url = self._get_backend_endpoint_url()
+        # El backend recibe el contexto mínimo del ticket y devuelve el texto ya preparado.
         payload = {
             "ticket_id": self.id,
             "title": self.name or "",
@@ -160,6 +167,7 @@ class HelpdeskTicket(models.Model):
     def _get_backend_endpoint_url(self):
         self.ensure_one()
         parameter_model = self.env["ir.config_parameter"].sudo()
+        # Permite sobreescribir la URL desde parámetros de Odoo o variables de entorno Docker.
         return parameter_model.get_param(
             "helpdesk_virtual_assistant.backend_ticket_entry_url",
             os.getenv(

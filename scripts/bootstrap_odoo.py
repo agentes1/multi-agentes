@@ -1,10 +1,15 @@
 import time
+import os
 
 from odoo.api_wrapper import OdooAPIWrapper
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
 MODULES = [
     "base",
+    "mail",
+    "fetchmail",
+    "google_gmail",
+    "mail_inbox_input",
     "sale_management",
     "stock",
     "crm",
@@ -137,6 +142,7 @@ ASSISTANT_USER = {
 SYSTEM_PARAMETERS = {
     "helpdesk_virtual_assistant.backend_ticket_entry_url": "http://assistant-backend:8000/assistant/ticket-entry",
     "helpdesk_virtual_assistant.backend_discuss_message_url": "http://assistant-backend:8000/assistant/discuss-message",
+    "mail_inbox_input.backend_incoming_email_url": "http://assistant-backend:8000/assistant/incoming-email",
 }
 
 
@@ -150,12 +156,15 @@ def bootstrap_odoo():
     seed_helpdesk_catalog(odoo)
     ensure_assistant_user(odoo)
     configure_system_parameters(odoo)
+    configure_gmail_oauth(odoo)
 
     print("\nOdoo bootstrap complete.")
 
 
 def install_modules(odoo):
     print("\nInstalling modules...")
+    print(" - updating module list")
+    odoo.update_module_list()
     for module in MODULES:
         print(f" - {module}")
         result = odoo.install_module(module)
@@ -232,6 +241,24 @@ def configure_system_parameters(odoo):
     for key, value in SYSTEM_PARAMETERS.items():
         odoo.set_system_parameter(key, value)
         print(f" [+] Parameter set: {key} = {value}")
+
+
+def configure_gmail_oauth(odoo):
+    print("\nConfiguring Gmail OAuth parameters...")
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+
+    if client_id:
+        odoo.set_system_parameter("google_gmail_client_id", client_id)
+        print(" [+] Parameter set: google_gmail_client_id")
+    else:
+        print(" [~] GOOGLE_CLIENT_ID not found. Skipping google_gmail_client_id.")
+
+    if client_secret:
+        odoo.set_system_parameter("google_gmail_client_secret", client_secret)
+        print(" [+] Parameter set: google_gmail_client_secret")
+    else:
+        print(" [~] GOOGLE_CLIENT_SECRET not found. Skipping google_gmail_client_secret.")
 
 
 if __name__ == "__main__":

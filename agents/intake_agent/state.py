@@ -13,6 +13,9 @@ class IntakeState(TypedDict, total=False):
     source_input: dict
     # texto unificado extraído de la entrada
     extracted_text: str
+    # datos básicos del remitente para flujos de email
+    sender_name: str
+    sender_email: str
     # solicitud estructurada generada por el LLM
     normalized_request: dict
     # tipo de ticket detectado por el agente: budget, issue o discard

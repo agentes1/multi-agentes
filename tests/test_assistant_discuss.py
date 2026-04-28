@@ -6,7 +6,7 @@ from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.tools import BudgetAgentTools
 from agents.general_agent.service import GENERAL_AGENT_NAME, GENERAL_AGENT_RESPONSE
 import api
-from assistant_discuss import DiscussMessageOrchestrator
+from orchestration.assistant_discuss import DiscussMessageOrchestrator
 
 
 class FakeBudgetOdooWrapper:

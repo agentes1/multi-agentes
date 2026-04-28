@@ -77,6 +77,16 @@ class OdooAPIWrapper:
             return self._models.execute_kw(self._db, self._uid, self._password, 'ir.module.module', 'button_immediate_install', [module_ids])
         return False
 
+    def update_module_list(self):
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'ir.module.module',
+            'update_list',
+            [],
+        )
+
     def search(self, model, domain, limit=100):
         """Returns a list of IDs for records matching the domain."""
         return self._models.execute_kw(self._db, self._uid, self._password, model, 'search', [domain], {'limit': limit})
@@ -87,6 +97,17 @@ class OdooAPIWrapper:
         if fields:
             params['fields'] = fields
         return self._models.execute_kw(self._db, self._uid, self._password, model, 'search_read', [domain], params)
+
+    def get_model_fields(self, model):
+        return self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            model,
+            'fields_get',
+            [],
+            {'attributes': ['string', 'type']},
+        )
 
     def drop_model(self, model):
         batch_limit = 1000
@@ -222,6 +243,24 @@ class OdooAPIWrapper:
             "read",
             [ids],
         )
+
+    def find_company(self, name, exact=False, limit=5):
+        operator = '=ilike' if exact else 'ilike'
+        return self.search_read(
+            'res.partner',
+            [('is_company', '=', True), ('name', operator, name)],
+            fields=['id', 'name', 'email', 'is_company'],
+            limit=limit,
+        )
+
+    def find_client(self, name):
+        clients = self.search_read(
+            'res.partner',
+            [('name', 'ilike', name), ('active', '=', True)],
+            fields=['id', 'name', 'email', 'phone', 'is_company'],
+            limit=1,
+        )
+        return clients[0] if clients else None
     
     # helpers presupuesto / ventas
 
@@ -280,6 +319,18 @@ class OdooAPIWrapper:
         )
         return result[0] if result else None
 
+    def get_order(self, order_id):
+        result = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            'sale.order',
+            'read',
+            [[order_id]],
+            {'fields': ['name', 'state', 'amount_untaxed', 'amount_total', 'date_order']},
+        )
+        return result[0] if result else None
+
     def get_sale_order_lines(self, order_id):
         lines = self.search_read(
             'sale.order.line',
@@ -329,6 +380,36 @@ class OdooAPIWrapper:
             fields=['id', 'name', 'default_code', 'lst_price'],
             limit=limit,
         )
+
+    def list_catalog(self, limit=100):
+        return self.search_read(
+            'product.product',
+            [('active', '=', True)],
+            fields=['id', 'name', 'default_code', 'lst_price', 'description'],
+            limit=limit,
+        )
+
+    def list_client_orders(self, partner_id, limit=10):
+        return self.search_read(
+            'sale.order',
+            [('partner_id', '=', partner_id)],
+            fields=['id', 'name', 'state', 'amount_total', 'date_order'],
+            limit=limit,
+        )
+
+    def list_client_tickets(self, partner_id, limit=10):
+        return self.search_read(
+            'helpdesk.ticket',
+            [('partner_id', '=', partner_id)],
+            fields=['id', 'name', 'stage_id', 'team_id'],
+            limit=limit,
+        )
+
+    def get_client_history(self, partner_id, limit=10):
+        return {
+            'orders': self.list_client_orders(partner_id, limit=limit),
+            'tickets': self.list_client_tickets(partner_id, limit=limit),
+        }
 
     # helpers discuss / chat bot
 

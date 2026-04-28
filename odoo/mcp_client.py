@@ -13,6 +13,9 @@ class OdooMCPClient:
     def list_catalog(self) -> dict:
         return odoo_mcp_server.list_catalog()
 
+    def find_company(self, name: str, exact: bool = False, limit: int = 5) -> list[dict]:
+        return odoo_mcp_server.find_company(name=name, exact=exact, limit=limit)
+
     def get_product_catalog_snapshot(self, product_ids: list[int]) -> list[dict]:
         return odoo_mcp_server.get_product_catalog_snapshot(product_ids=product_ids)
 
@@ -27,6 +30,9 @@ class OdooMCPClient:
 
     def get_customer_profile(self, company_name: str) -> dict:
         return odoo_mcp_server.get_customer_profile(company_name=company_name)
+
+    def get_customer_history(self, partner_id: int, limit: int = 10) -> dict:
+        return odoo_mcp_server.get_customer_history(partner_id=partner_id, limit=limit)
 
     def create_sale_order(self, partner_id: int) -> int:
         return odoo_mcp_server.create_sale_order(partner_id=partner_id)

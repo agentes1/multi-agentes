@@ -30,10 +30,9 @@ def test_budget_route_detects_sales_and_commercial_automation_request() -> None:
     assert result.name == "budget"
 
 
-def test_issue_route_detects_support_incident() -> None:
+def test_support_incident_falls_back_to_discard_when_issue_route_is_unused() -> None:
     result = router("Tenemos un error en Odoo y no funciona la facturacion, necesitamos soporte.")
-    assert result.name == "issue"
-    assert result.score >= 0.34
+    assert result.name == "discard"
 
 
 def test_discard_route_handles_general_question() -> None:

@@ -53,31 +53,6 @@ budget_route = RouteDefinition(
     ),
 )
 
-issue_route = RouteDefinition(
-    name="issue",
-    utterances=(
-        "tenemos un error en odoo y necesitamos soporte",
-        "no funciona el crm y aparece una incidencia",
-        "hay un problema bloqueando el trabajo del equipo",
-        "necesitamos ayuda con una falla en facturacion",
-        "se ha roto una automatizacion y urge revisarlo",
-    ),
-    keywords=(
-        "error",
-        "problema",
-        "incidencia",
-        "soporte",
-        "ayuda",
-        "falla",
-        "fallo",
-        "bug",
-        "bloqueado",
-        "bloquea",
-        "no funciona",
-        "roto",
-        "urgente",
-    ),
-)
 
 discard_route = RouteDefinition(
     name="discard",
@@ -111,4 +86,4 @@ discard_route = RouteDefinition(
     threshold=0.0,
 )
 
-routes = (budget_route, issue_route, discard_route)
+routes = (budget_route, discard_route)
