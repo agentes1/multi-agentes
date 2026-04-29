@@ -152,7 +152,7 @@ class MailInboxMessage(models.Model):
         )
 
         try:
-            with urlopen(request, timeout=15) as response:
+            with urlopen(request, timeout=60) as response:
                 raw_body = response.read().decode("utf-8")
             return json.loads(raw_body)
         except HTTPError as error:
