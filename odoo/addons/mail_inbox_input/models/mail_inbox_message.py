@@ -73,7 +73,7 @@ class MailInboxMessage(models.Model):
         )
 
         record = self.create(values)
-        return record.id
+        return record
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -152,7 +152,7 @@ class MailInboxMessage(models.Model):
         )
 
         try:
-            with urlopen(request, timeout=15) as response:
+            with urlopen(request, timeout=60) as response:
                 raw_body = response.read().decode("utf-8")
             return json.loads(raw_body)
         except HTTPError as error:
@@ -161,7 +161,14 @@ class MailInboxMessage(models.Model):
                 self.id,
                 error,
             )
-        except URLError as error:
+        except HTTPError as error:
+            error_body = error.read().decode("utf-8", errors="replace")
+            _logger.exception(
+                "Incoming email backend returned HTTP error for inbox record %s: %s. Body: %s",
+                self.id,
+                error,
+                error_body,
+            )
             _logger.exception(
                 "Incoming email backend could not be reached for inbox record %s: %s",
                 self.id,

@@ -14,3 +14,6 @@ __pycache__/
 # Herramientas locales
 .claude/
 .deepeval/
+
+.pytest_cache/
+pytest-cache-files-*/

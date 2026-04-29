@@ -4,6 +4,8 @@ from langchain_core.runnables import RunnableConfig
 from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.state import BudgetState
 
+from shared.prompts import ANSWER_BOT_PROMPT
+
 
 # helper para obtener dependencias inyectadas desde el config del grafo
 def _get_deps(config: RunnableConfig) -> BudgetDependencies:
@@ -191,13 +193,7 @@ async def compose_budget_reply_node(state: BudgetState, config: RunnableConfig) 
     customer_profile = tools.get_customer_profile(company_name)
     catalog_snapshot = tools.get_product_catalog_snapshot(product_ids) if product_ids else []
     related_products = tools.find_related_products(product_ids, limit=2) if product_ids else []
-    system_prompt = (
-        "Eres un asistente comercial que responde en espanol de forma clara y profesional. "
-        "Redacta un mensaje breve y natural para el cliente usando solo la informacion proporcionada. "
-        "No inventes servicios, precios, ids ni datos que no esten en el contexto. "
-        "Menciona el presupuesto creado, el total, los servicios incluidos y sugiere un siguiente paso. "
-        "Si hay productos relacionados, puedes sugerirlos de forma opcional y prudente."
-    )
+    system_prompt = ANSWER_BOT_PROMPT
     user_prompt = "\n".join(
         [
             f"Cliente: {company_name}",
