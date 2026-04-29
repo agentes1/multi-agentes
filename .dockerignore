@@ -1,0 +1,12 @@
+.git
+.gitignore
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+.deepeval
+.venv
+venv
+pytest-cache-files-*
+multi_agentes.egg-info
