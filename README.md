@@ -210,7 +210,7 @@ El bootstrap:
 - crea contactos demo;
 - crea equipos, tipos, categorias, estados y etiquetas de helpdesk;
 - crea el usuario interno `Asistente Virtual`;
-- configura URLs internas para ticket entry, Discuss e incoming email;
+- configura URLs internas para ticket entry, Discuss, incoming email y budget from ticket;
 - configura parametros de Gmail OAuth si existen en el entorno.
 
 ## 7. Endpoints
@@ -245,12 +245,26 @@ Respuesta resumida:
 {
   "ok": true,
   "ticket_id": 321,
-  "final_text": "Ticket creado correctamente en Odoo con id 321 y tipo budget.",
-  "normalized_request": {},
-  "ticket_payload": {},
+  "final_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
+  "reply_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
+  "route_name": "budget",
+  "agent_name": null,
+  "normalized_request": {
+    "company_name": "ACME",
+    "project_summary": "Solicitud de presupuesto CRM",
+    "requirements": ["CRM", "automatizacion comercial"],
+    "urgency": "media",
+    "ticket_type": "budget",
+    "missing_information": []
+  },
+  "ticket_payload": {
+    "team_name": "Presupuestos",
+    "type_name": "Presupuesto",
+    "category_name": "Consulta presupuesto"
+  },
   "warnings": [],
   "error": null,
-  "trace": ["incoming_email_received", "ticket_type_decided:budget", "ticket_created:321"]
+  "trace": ["incoming_email_received", "ticket_type_decided:budget", "ticket_created:321", "ticket_received", "route_decided:budget", "budget_waiting_ready_state"]
 }
 ```
 
@@ -277,12 +291,12 @@ Respuesta resumida:
 {
   "ok": true,
   "route_name": "budget",
-  "agent_name": "budget_agent",
-  "reply_text": "Hola ACME...",
+  "agent_name": null,
+  "reply_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
   "normalized_request": {},
   "quote_summary": {},
   "error": null,
-  "trace": ["ticket_received", "route_decided:budget", "budget_request_prepared", "agent_completed:budget_agent"]
+  "trace": ["ticket_received", "route_decided:budget", "budget_waiting_ready_state"]
 }
 ```
 
@@ -304,6 +318,66 @@ curl -X POST http://localhost:8000/assistant/discuss-message \
     "body": "Necesito presupuesto para CRM.",
     "thread_id": "manual-discuss-7"
   }'
+```
+
+Respuesta resumida para un mensaje de presupuesto:
+
+```json
+{
+  "ok": true,
+  "route_name": "budget",
+  "agent_name": null,
+  "reply_text": "He detectado que este mensaje puede requerir presupuesto. Creare el presupuesto cuando el ticket este marcado como Ready for next stage.",
+  "normalized_request": {},
+  "quote_summary": {},
+  "error": null,
+  "trace": ["discuss_message_received", "route_decided:budget", "budget_waiting_ready_state"]
+}
+```
+
+### 7.5 `POST /assistant/budget-from-ticket`
+
+Entrada usada por `helpdesk_virtual_assistant` cuando un ticket pasa a Ready for next stage.
+
+```bash
+curl -X POST http://localhost:8000/assistant/budget-from-ticket \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticket_id": 100,
+    "title": "Solicitud presupuesto CRM",
+    "description": "Necesitamos CRM y automatizacion comercial en Odoo.",
+    "partner_id": 12,
+    "partner_name": "ACME",
+    "partner_email": "ana@acme.com",
+    "thread_id": "manual-budget-100"
+  }'
+```
+
+Respuesta resumida:
+
+```json
+{
+  "ok": true,
+  "agent_name": "budget_agent",
+  "reply_text": "He generado un presupuesto inicial en Odoo...",
+  "sale_order_id": 55,
+  "normalized_request": {
+    "company_name": "ACME",
+    "project_summary": "Solicitud presupuesto CRM",
+    "requirements": ["CRM", "automatizacion comercial"]
+  },
+  "quote_summary": {
+    "sale_order_id": 55,
+    "client_order_ref": "helpdesk-ticket-100",
+    "selected_products": [
+      {"id": 3, "name": "CRM", "default_code": "crm"}
+    ],
+    "total": 1200.0,
+    "currency": "EUR"
+  },
+  "error": null,
+  "trace": ["budget_ticket_received", "agent_completed:budget_agent"]
+}
 ```
 
 ## 8. Router semantico
@@ -333,13 +407,14 @@ python -m pytest -q \
   tests/test_assistant_entry.py \
   tests/test_assistant_email.py \
   tests/test_assistant_discuss.py \
+  tests/test_intake_partner_assignment.py \
   tests/test_deepeval_eval.py
 ```
 
 En PowerShell:
 
 ```powershell
-python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_deepeval_eval.py
+python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py tests/test_deepeval_eval.py
 ```
 
 ### 9.2 Tests de integracion con Odoo
@@ -362,8 +437,8 @@ python -m pytest -q -m "not integration"
 # Router semantico
 python -m pytest -q tests/test_router.py
 
-# Orquestadores de API actuales
-python -m pytest -q tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py
+# Orquestadores de API actuales y asignacion de empresas
+python -m pytest -q tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py
 
 # Agente intake contra Odoo real
 python -m pytest -q tests/test_intake_agent.py
@@ -447,8 +522,7 @@ Guia ampliada: `docs/model_evaluation_guide.md`.
 ├── agents/
 │   ├── budget_agent/
 │   ├── general_agent/
-│   ├── intake_agent/
-│   └── support_agent/
+│   └── intake_agent/
 ├── orchestration/
 ├── routing/
 ├── shared/
@@ -504,7 +578,7 @@ El router solo tiene rutas `budget` y `discard`. Para que algo sea presupuesto d
 
 ### El presupuesto no encuentra productos
 
-`budget_agent` busca productos reales de Odoo por texto y `default_code`. Ejecuta el bootstrap o crea productos con codigos como:
+`budget_agent` obtiene el catalogo real con `list_catalog()` y el LLM elige ids de producto de esa lista. Ejecuta el bootstrap o crea productos activos con `default_code`, por ejemplo:
 
 - `crm`
 - `automatizacion_comercial`
@@ -514,6 +588,24 @@ El router solo tiene rutas `budget` y `discard`. Para que algo sea presupuesto d
 - `formacion`
 - `soporte_mensual`
 - `desarrollo_medida`
+
+### El presupuesto no se crea al crear un ticket manual
+
+Es el comportamiento esperado. El ticket manual solo abre el chat de asistente y llama a `/assistant/ticket-entry`.
+
+El presupuesto se crea cuando el ticket pasa a Ready for next stage, que actualmente se detecta con:
+
+```python
+kanban_state == "done"
+```
+
+Si al moverlo a Ready no se crea presupuesto, revisa:
+
+- que aparezca una llamada a `POST /assistant/budget-from-ticket` en los logs;
+- que el cambio de etapa escriba realmente `kanban_state = "done"`;
+- que el ticket no tenga ya `assistant_budget_created` o `assistant_sale_order_id`;
+- que el catalogo tenga productos activos con `default_code`;
+- que el backend pueda contactar con Odoo y Ollama.
 
 ## 14. Comandos rapidos
 
@@ -531,7 +623,7 @@ docker compose up --build
 python scripts/bootstrap_odoo.py
 
 # Tests rapidos
-python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_deepeval_eval.py
+python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py tests/test_deepeval_eval.py
 
 # Tests de integracion
 python -m pytest -q -m integration
