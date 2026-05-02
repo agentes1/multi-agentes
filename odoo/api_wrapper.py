@@ -180,6 +180,8 @@ class OdooAPIWrapper:
         category_id=None,
         tag_ids=None,
         motive_id=None,
+        partner_id=None,
+        origin_channel=None,
     ):
         vals = {
             'name': title,
@@ -198,9 +200,16 @@ class OdooAPIWrapper:
         if motive_id:
             vals['motive_id'] = motive_id
 
+        if partner_id:
+            vals['partner_id'] = partner_id
+
         # relación many2many con etiquetas
         if tag_ids:
             vals['tag_ids'] = [(6, 0, tag_ids)]
+
+        context = {}
+        if origin_channel:
+            context['assistant_ticket_origin'] = origin_channel
 
         return self._models.execute_kw(
             self._db,
@@ -209,6 +218,7 @@ class OdooAPIWrapper:
             'helpdesk.ticket',
             'create',
             [vals],
+            {'context': context} if context else {},
         )
     
     def get_helpdesk_ticket(self, ticket_id):

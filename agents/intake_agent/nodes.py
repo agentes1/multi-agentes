@@ -350,6 +350,24 @@ async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict
         if warnings:
             description += "\n\n---\nObservaciones automáticas:\n- " + "\n- ".join(warnings)
 
+        partner_id = None
+        sender_email = state.get("sender_email", "").strip()
+        sender_name = state.get("sender_name", "").strip()
+        company_name = state.get("normalized_request", {}).get("company_name", "").strip()
+
+        if sender_email:
+            existing_partner = deps.odoo_service.get_partner_by_email(sender_email)
+            if existing_partner:
+                partner_id = existing_partner["id"]
+            else:
+                partner_id = deps.odoo_service.create_contact(
+                    {
+                        "name": sender_name or company_name or sender_email,
+                        "email": sender_email,
+                        "company_type": "person",
+                    }
+                )
+
         # crear ticket real en helpdesk.ticket
         ticket_id = deps.odoo_service.create_helpdesk_ticket(
             title=ticket_payload["title"],
@@ -360,6 +378,8 @@ async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict
             category_id=category_id,
             tag_ids=tag_ids,
             motive_id=motive_id,
+            partner_id=partner_id,
+            origin_channel=state.get("source_input", {}).get("channel"),
         )
 
     except Exception as e:

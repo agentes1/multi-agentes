@@ -92,8 +92,12 @@ class AssistantIncomingEmailResponse(BaseModel):
     ok: bool
     ticket_id: int | None = None
     final_text: str = ""
+    reply_text: str = ""
+    route_name: str | None = None
+    agent_name: str | None = None
     normalized_request: dict = {}
     ticket_payload: dict = {}
+    quote_summary: dict = {}
     warnings: list[str] = []
     error: str | None = None
     trace: list[str] = []
