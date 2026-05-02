@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from email.utils import parseaddr
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -118,13 +119,16 @@ class MailInboxMessage(models.Model):
 
         # Si intake crea el ticket correctamente, el propio create() del ticket seguirá el resto del flujo.
         if result.get("ok"):
+            reply_text = result.get("reply_text", "") or result.get("final_text", "")
             self.sudo().write(
                 {
                     "state": "processed",
-                    "agent_response": result.get("final_text", ""),
+                    "agent_response": reply_text,
                     "generated_ticket_id": result.get("ticket_id") or 0,
                 }
             )
+            if reply_text:
+                self._send_reply_email(reply_text)
             return
 
         self.sudo().write(
@@ -156,12 +160,6 @@ class MailInboxMessage(models.Model):
                 raw_body = response.read().decode("utf-8")
             return json.loads(raw_body)
         except HTTPError as error:
-            _logger.exception(
-                "Incoming email backend returned HTTP error for inbox record %s: %s",
-                self.id,
-                error,
-            )
-        except HTTPError as error:
             error_body = error.read().decode("utf-8", errors="replace")
             _logger.exception(
                 "Incoming email backend returned HTTP error for inbox record %s: %s. Body: %s",
@@ -169,6 +167,7 @@ class MailInboxMessage(models.Model):
                 error,
                 error_body,
             )
+        except URLError as error:
             _logger.exception(
                 "Incoming email backend could not be reached for inbox record %s: %s",
                 self.id,
@@ -191,6 +190,26 @@ class MailInboxMessage(models.Model):
         plain_body = re.sub(r"<[^>]+>", " ", body)
         plain_body = re.sub(r"\s+", " ", plain_body).strip()
         return plain_body
+
+    def _send_reply_email(self, reply_text):
+        self.ensure_one()
+        _, recipient_email = parseaddr(self.email_from or "")
+        recipient_email = (recipient_email or self.email_from or "").strip()
+        if not recipient_email:
+            _logger.warning(
+                "No recipient email could be extracted for inbox record %s. Reply email skipped.",
+                self.id,
+            )
+            return False
+
+        subject = self.subject or "(Sin asunto)"
+        mail_values = {
+            "subject": f"Re: {subject}" if not subject.lower().startswith("re:") else subject,
+            "body_html": f"<div>{reply_text.replace(chr(10), '<br/>')}</div>",
+            "email_to": recipient_email,
+        }
+        self.env["mail.mail"].sudo().create(mail_values).send()
+        return True
 
     def action_mark_processed(self):
         for record in self:

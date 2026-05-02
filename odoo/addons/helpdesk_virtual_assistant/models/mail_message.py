@@ -30,6 +30,25 @@ class MailMessage(models.Model):
 
     def _trigger_virtual_assistant_followup(self):
         self.ensure_one()
+        if self.env.context.get("skip_virtual_assistant_followup"):
+            _logger.info(
+                "Skipping discuss follow-up for message %s because it was posted by the assistant flow.",
+                self.id,
+            )
+            return
+        if self.message_type != "comment":
+            _logger.info(
+                "Skipping discuss follow-up for message %s because message_type=%s is not a user comment.",
+                self.id,
+                self.message_type,
+            )
+            return
+        if not self.author_id:
+            _logger.info(
+                "Skipping discuss follow-up for message %s because no author_id is present.",
+                self.id,
+            )
+            return
         channel = self._get_virtual_assistant_channel()
         if not channel:
             _logger.info(
@@ -83,7 +102,7 @@ class MailMessage(models.Model):
             channel.id,
             self.id,
         )
-        channel.with_user(assistant_user).message_post(
+        channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
             body=reply_text,
             author_id=assistant_user.partner_id.id,
             message_type="comment",
@@ -96,18 +115,12 @@ class MailMessage(models.Model):
         if not self.res_id:
             return False
 
-        candidate_models = []
-        if model_name in {"discuss.channel", "mail.channel"}:
-            candidate_models.append("discuss.channel")
-        elif not model_name:
-            candidate_models.extend(("discuss.channel", "mail.channel"))
-        else:
+        if model_name not in {"discuss.channel", "mail.channel"}:
             return False
 
-        for candidate_model in candidate_models:
-            channel = self.env[candidate_model].sudo().browse(self.res_id)
-            if channel.exists() and channel.name and _CHANNEL_NAME_PATTERN.match(channel.name):
-                return channel
+        channel = self.env["discuss.channel"].sudo().browse(self.res_id)
+        if channel.exists() and channel.name and _CHANNEL_NAME_PATTERN.match(channel.name):
+            return channel
         return False
 
     def _extract_plain_body(self):

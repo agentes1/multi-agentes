@@ -17,7 +17,12 @@ class HelpdeskTicket(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         tickets = super().create(vals_list)
+        ticket_origin = self.env.context.get("assistant_ticket_origin")
         for ticket in tickets:
+            # Los tickets creados desde email siguen convergiendo en helpdesk,
+            # pero la primera respuesta debe salir por correo, no por Discuss.
+            if ticket_origin == "email":
+                continue
             try:
                 # Cada ticket nuevo arranca automáticamente una conversación en Discuss.
                 ticket._open_virtual_assistant_chat()
@@ -71,7 +76,7 @@ class HelpdeskTicket(models.Model):
 
         # Primer mensaje fijo: confirma recepción antes de consultar al semantic router.
         initial_message = self._build_virtual_assistant_message()
-        channel.with_user(assistant_user).message_post(
+        channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
             body=initial_message,
             author_id=assistant_user.partner_id.id,
             message_type="comment",
@@ -81,7 +86,7 @@ class HelpdeskTicket(models.Model):
         # Segundo mensaje: respuesta real del backend según ruta/agente seleccionado.
         message = self._fetch_virtual_assistant_message()
         if message and message != initial_message:
-            channel.with_user(assistant_user).message_post(
+            channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
                 body=message,
                 author_id=assistant_user.partner_id.id,
                 message_type="comment",

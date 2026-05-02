@@ -1,6 +1,15 @@
-from dotenv import load_dotenv
+from pathlib import Path
 import os
-load_dotenv()
+
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
+# En desarrollo local priorizamos el .env de la raiz si existe, pero
+# mantenemos compatibilidad con shared/.env porque Docker Compose del proyecto
+# lo usa como origen de variables para el backend.
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(ROOT_DIR / "shared" / ".env", override=False)
 
 #/CREDENCIALES MCP SERVER DE ODOO/
 URL = os.getenv("URL")
