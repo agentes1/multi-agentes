@@ -13,22 +13,23 @@ class FakeBudgetOdooWrapper:
     def __init__(self):
         self.create_sale_order_called = False
 
-    def find_products_by_text(self, text, limit=5):
-        catalog = {
-            "crm": {"id": 11, "name": "CRM", "default_code": "CRM"},
-            "automatizacion comercial": {
+    def list_catalog(self):
+        return {
+            "CRM": {"id": 11, "name": "CRM", "default_code": "CRM"},
+            "AUTO": {
                 "id": 22,
                 "name": "Automatizacion Comercial",
                 "default_code": "AUTO",
             },
         }
-        normalized = str(text).lower().strip()
-        return [catalog[normalized]] if normalized in catalog else []
+
+    def find_sale_order_by_client_ref(self, client_order_ref):
+        return None
 
     def get_or_create_contact(self, company_name):
         return 501
 
-    def create_sale_order(self, partner_id):
+    def create_sale_order(self, partner_id, client_order_ref=None):
         self.create_sale_order_called = True
         return 701
 
@@ -61,14 +62,17 @@ class FakeOdooMCPClient:
     def __init__(self, wrapper: FakeBudgetOdooWrapper):
         self.wrapper = wrapper
 
-    def find_products_by_text(self, text: str, limit: int = 5):
-        return self.wrapper.find_products_by_text(text, limit=limit)
+    def list_catalog(self):
+        return self.wrapper.list_catalog()
 
     def get_or_create_contact(self, company_name: str):
         return self.wrapper.get_or_create_contact(company_name)
 
-    def create_sale_order(self, partner_id: int):
-        return self.wrapper.create_sale_order(partner_id)
+    def find_sale_order_by_client_ref(self, client_order_ref: str):
+        return self.wrapper.find_sale_order_by_client_ref(client_order_ref)
+
+    def create_sale_order(self, partner_id: int, client_order_ref: str | None = None):
+        return self.wrapper.create_sale_order(partner_id, client_order_ref=client_order_ref)
 
     def create_sale_order_line(self, order_id: int, product_id: int, quantity: int = 1):
         return self.wrapper.create_sale_order_line(order_id, product_id, quantity=quantity)
@@ -117,6 +121,18 @@ class FakeOdooMCPClient:
 class FakeBudgetLLM:
     async def ainvoke(self, messages):
         prompt = messages[-1].content
+        if "Devuelve solo JSON" in prompt:
+            if "product_ids" in prompt:
+                return AIMessage(
+                    content='{"product_ids": [11, 22], "unmatched_requirements": []}'
+                )
+            return AIMessage(
+                content=(
+                    '{"company_name": "Alejandro", '
+                    '"project_summary": "Solicitud presupuesto CRM", '
+                    '"requirements": ["crm", "automatizacion comercial"]}'
+                )
+            )
         return AIMessage(
             content=(
                 "Hola Alejandro,\n\n"
@@ -143,9 +159,7 @@ def _build_budget_deps(wrapper: FakeBudgetOdooWrapper):
 @pytest.mark.asyncio
 async def test_discuss_message_routes_budget_and_returns_reply() -> None:
     budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+    orchestrator = DiscussMessageOrchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
@@ -163,25 +177,21 @@ async def test_discuss_message_routes_budget_and_returns_reply() -> None:
 
     assert result["ok"] is True
     assert result["route_name"] == "budget"
-    assert result["agent_name"] == "budget_agent"
-    assert "Hola Alejandro," in result["reply_text"]
-    assert "Referencia del presupuesto: 701" in result["reply_text"]
-    assert result["quote_summary"]["sale_order_id"] == 701
-    assert budget_wrapper.create_sale_order_called is True
+    assert result["agent_name"] is None
+    assert "Ready for next stage" in result["reply_text"]
+    assert result["quote_summary"] == {}
+    assert budget_wrapper.create_sale_order_called is False
     assert result["trace"] == [
         "discuss_message_received",
         "route_decided:budget",
-        "budget_request_prepared",
-        "agent_completed:budget_agent",
+        "budget_waiting_ready_state",
     ]
 
 
 @pytest.mark.asyncio
 async def test_discuss_message_routes_discard_and_returns_fixed_reply() -> None:
     budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+    orchestrator = DiscussMessageOrchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
@@ -211,9 +221,7 @@ async def test_discuss_message_routes_discard_and_returns_fixed_reply() -> None:
 @pytest.mark.asyncio
 async def test_discuss_message_ignores_budget_ticket_title_when_message_is_general() -> None:
     budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+    orchestrator = DiscussMessageOrchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
@@ -237,9 +245,7 @@ async def test_discuss_message_ignores_budget_ticket_title_when_message_is_gener
 
 def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None:
     budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+    orchestrator = DiscussMessageOrchestrator()
     monkeypatch.setattr(api, "build_discuss_message_orchestrator", lambda: orchestrator)
 
     client = TestClient(api.app)
@@ -262,5 +268,5 @@ def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None
     payload = response.json()
     assert payload["ok"] is True
     assert payload["route_name"] == "budget"
-    assert payload["agent_name"] == "budget_agent"
-    assert "Hola Alejandro," in payload["reply_text"]
+    assert payload["agent_name"] is None
+    assert "Ready for next stage" in payload["reply_text"]

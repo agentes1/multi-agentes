@@ -39,6 +39,7 @@ services:
       PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
       HELP_DESK_VIRTUAL_ASSISTANT_TICKET_ENTRY_URL: http://assistant-backend:8000/assistant/ticket-entry
       HELP_DESK_VIRTUAL_ASSISTANT_DISCUSS_MESSAGE_URL: http://assistant-backend:8000/assistant/discuss-message
+      HELP_DESK_VIRTUAL_ASSISTANT_BUDGET_FROM_TICKET_URL: http://assistant-backend:8000/assistant/budget-from-ticket
       MAIL_INBOX_INPUT_BACKEND_INCOMING_EMAIL_URL: http://assistant-backend:8000/assistant/incoming-email
 
   db:

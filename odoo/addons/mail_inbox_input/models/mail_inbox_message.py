@@ -12,8 +12,6 @@ _logger = logging.getLogger(__name__)
 
 
 class MailInboxMessage(models.Model):
-    # Modelo de bandeja de entrada para correos que llegan a Odoo por fetchmail/Gmail.
-    # Su función es registrar el correo y delegar el procesamiento real al intake agent.
     _name = "mail.inbox.message"
     _description = "Incoming Mail Message"
     _inherit = ["mail.thread", "mail.activity.mixin"]
@@ -27,10 +25,12 @@ class MailInboxMessage(models.Model):
     body_html = fields.Html(string="Email Body", sanitize=False)
     message_id = fields.Char(string="Message-ID", index=True, copy=False)
     received_date = fields.Datetime(string="Received Date", default=fields.Datetime.now, tracking=True)
-    partner_id = fields.Many2one(comodel_name="res.partner", string="Related Partner", tracking=True)
+    partner_id = fields.Many2one("res.partner", string="Related Partner", tracking=True)
+
     state = fields.Selection(
-        selection=[
+        [
             ("new", "New"),
+            ("processing", "Processing"),
             ("processed", "Processed"),
             ("error", "Error"),
         ],
@@ -38,34 +38,35 @@ class MailInboxMessage(models.Model):
         default="new",
         tracking=True,
     )
+
     agent_response = fields.Text(string="Agent Response", readonly=True)
     generated_ticket_id = fields.Integer(string="Generated Ticket ID", readonly=True)
 
     @api.model
     def message_new(self, msg_dict, custom_values=None):
-        # Hook que usa fetchmail al crear el registro desde un correo real entrante.
-        _logger.info("MAIL_INBOX_INPUT msg_dict recibido: %s", msg_dict)
-
+        """Guarda en Odoo el correo entrante recibido por fetchmail."""
         values = dict(custom_values or {})
-        email_from = msg_dict.get("email_from") or msg_dict.get("from") or msg_dict.get("author_email")
-        email_to = msg_dict.get("to") or msg_dict.get("email_to") or msg_dict.get("recipients")
-        email_cc = msg_dict.get("cc") or msg_dict.get("email_cc")
-        body = msg_dict.get("body") or msg_dict.get("body_html") or msg_dict.get("text") or ""
 
-        author_id = msg_dict.get("author_id")
+        email_from = (
+            msg_dict.get("email_from")
+            or msg_dict.get("from")
+            or msg_dict.get("author_email")
+            or ""
+        )
+
         partner_id = False
+        author_id = msg_dict.get("author_id")
         if author_id:
             partner = self.env["res.partner"].browse(author_id).exists()
-            if partner:
-                partner_id = partner.id
+            partner_id = partner.id if partner else False
 
         values.update(
             {
                 "subject": msg_dict.get("subject") or "(No subject)",
                 "email_from": email_from,
-                "email_to": email_to,
-                "email_cc": email_cc,
-                "body_html": body,
+                "email_to": msg_dict.get("to") or msg_dict.get("email_to") or msg_dict.get("recipients") or "",
+                "email_cc": msg_dict.get("cc") or msg_dict.get("email_cc") or "",
+                "body_html": msg_dict.get("body") or msg_dict.get("body_html") or msg_dict.get("text") or "",
                 "message_id": msg_dict.get("message_id"),
                 "received_date": fields.Datetime.now(),
                 "partner_id": partner_id,
@@ -73,73 +74,87 @@ class MailInboxMessage(models.Model):
             }
         )
 
-        record = self.create(values)
-        return record
+        return self.create(values)
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Crea los registros y deja su procesamiento para el cron."""
         records = super().create(vals_list)
+        _logger.info("Queued %s incoming inbox message(s).", len(records))
+        return records
+
+    @api.model
+    def _cron_process_pending_intake(self, limit=5):
+        """Procesa correos pendientes de forma asíncrona."""
+        records = self.search(
+            [("state", "=", "new")],
+            order="received_date asc, id asc",
+            limit=limit,
+        )
+
         for record in records:
             try:
-                # Nada más guardar el correo, se intenta lanzar el flujo de intake.
+                record.sudo().write({"state": "processing"})
                 record._trigger_intake_processing()
             except Exception:
-                _logger.exception(
-                    "Incoming mail could not be processed by intake for inbox record %s",
-                    record.id,
-                )
+                _logger.exception("Could not process inbox record %s.", record.id)
                 record.sudo().write(
                     {
                         "state": "error",
-                        "agent_response": "Error interno al intentar procesar el correo entrante.",
+                        "agent_response": "Error interno al procesar el correo entrante.",
                     }
                 )
-        return records
+
+        return True
 
     def _trigger_intake_processing(self):
+        """Envía el correo normalizado al backend del agente de intake."""
         self.ensure_one()
-        if self.state != "new":
+
+        if self.state not in ("new", "processing"):
             return
 
-        # El backend recibe el correo normalizado y se encarga de crear el ticket en Odoo.
-        payload = {
+        result = self._call_intake_backend(self._build_backend_payload())
+
+        if result.get("ok"):
+            self._mark_as_processed(result)
+        else:
+            self.sudo().write(
+                {
+                    "state": "error",
+                    "agent_response": result.get("error") or "No se pudo procesar el correo entrante.",
+                }
+            )
+
+    def _build_backend_payload(self):
+        """Construye el payload que recibirá el agente de intake."""
+        self.ensure_one()
+
+        _, sender_email = parseaddr(self.email_from or "")
+
+        # No mandamos self.partner_id como cliente.
+        # Ese partner lo asigna Odoo al recibir el correo y puede ser la empresa interna.
+        return {
+            "channel": "email",
             "inbox_id": self.id,
             "subject": self.subject or "",
+            "from": self.email_from or "",
             "email_from": self.email_from or "",
             "email_to": self.email_to or "",
             "email_cc": self.email_cc or "",
             "body_html": self.body_html or "",
             "body": self._extract_plain_body(),
             "message_id": self.message_id or "",
-            "sender_name": self.partner_id.name if self.partner_id else "",
+            "sender_name": "",
+            "sender_email": sender_email or "",
             "received_date": str(self.received_date or ""),
             "thread_id": f"odoo-mail-inbox-{self.id}",
         }
-        result = self._call_intake_backend(payload)
-
-        # Si intake crea el ticket correctamente, el propio create() del ticket seguirá el resto del flujo.
-        if result.get("ok"):
-            reply_text = result.get("reply_text", "") or result.get("final_text", "")
-            self.sudo().write(
-                {
-                    "state": "processed",
-                    "agent_response": reply_text,
-                    "generated_ticket_id": result.get("ticket_id") or 0,
-                }
-            )
-            if reply_text:
-                self._send_reply_email(reply_text)
-            return
-
-        self.sudo().write(
-            {
-                "state": "error",
-                "agent_response": result.get("error") or "No se pudo procesar el correo entrante.",
-            }
-        )
 
     def _call_intake_backend(self, payload):
+        """Llama al backend que ejecuta el agente de intake."""
         self.ensure_one()
+
         endpoint_url = self.env["ir.config_parameter"].sudo().get_param(
             "mail_inbox_input.backend_incoming_email_url",
             os.getenv(
@@ -147,7 +162,7 @@ class MailInboxMessage(models.Model):
                 "http://assistant-backend:8000/assistant/incoming-email",
             ),
         )
-        # Esta llamada no responde al cliente por email todavía; solo arranca la creación del ticket.
+
         request = Request(
             endpoint_url,
             data=json.dumps(payload).encode("utf-8"),
@@ -157,71 +172,95 @@ class MailInboxMessage(models.Model):
 
         try:
             with urlopen(request, timeout=60) as response:
-                raw_body = response.read().decode("utf-8")
-            return json.loads(raw_body)
+                return json.loads(response.read().decode("utf-8"))
+
         except HTTPError as error:
             error_body = error.read().decode("utf-8", errors="replace")
             _logger.exception(
-                "Incoming email backend returned HTTP error for inbox record %s: %s. Body: %s",
+                "Backend returned HTTP error for inbox record %s: %s. Body: %s",
                 self.id,
                 error,
                 error_body,
             )
-        except URLError as error:
-            _logger.exception(
-                "Incoming email backend could not be reached for inbox record %s: %s",
-                self.id,
-                error,
-            )
-        except Exception:
-            _logger.exception(
-                "Incoming email backend call failed unexpectedly for inbox record %s",
-                self.id,
-            )
 
-        return {
-            "ok": False,
-            "error": "No se pudo contactar con el backend de intake.",
-        }
+        except URLError as error:
+            _logger.exception("Backend could not be reached for inbox record %s: %s", self.id, error)
+
+        except Exception:
+            _logger.exception("Backend call failed for inbox record %s.", self.id)
+
+        return {"ok": False, "error": "No se pudo contactar con el backend de intake."}
+
+    def _mark_as_processed(self, result):
+        """Marca el correo como procesado y envía respuesta si el backend la genera."""
+        self.ensure_one()
+
+        reply_text = result.get("reply_text") or result.get("final_text") or ""
+
+        self.sudo().write(
+            {
+                "state": "processed",
+                "agent_response": reply_text,
+                "generated_ticket_id": result.get("ticket_id") or 0,
+            }
+        )
+
+        if reply_text:
+            self._send_reply_email(reply_text)
 
     def _extract_plain_body(self):
+        """Convierte el HTML del correo en texto plano básico."""
         self.ensure_one()
-        body = self.body_html or ""
-        plain_body = re.sub(r"<[^>]+>", " ", body)
-        plain_body = re.sub(r"\s+", " ", plain_body).strip()
-        return plain_body
+
+        plain_body = re.sub(r"<[^>]+>", " ", self.body_html or "")
+        return re.sub(r"\s+", " ", plain_body).strip()
 
     def _send_reply_email(self, reply_text):
+        """Envía una respuesta por email al remitente original."""
         self.ensure_one()
+
         _, recipient_email = parseaddr(self.email_from or "")
         recipient_email = (recipient_email or self.email_from or "").strip()
+
         if not recipient_email:
-            _logger.warning(
-                "No recipient email could be extracted for inbox record %s. Reply email skipped.",
-                self.id,
-            )
+            _logger.warning("No recipient email found for inbox record %s.", self.id)
             return False
 
         subject = self.subject or "(Sin asunto)"
-        mail_values = {
-            "subject": f"Re: {subject}" if not subject.lower().startswith("re:") else subject,
-            "body_html": f"<div>{reply_text.replace(chr(10), '<br/>')}</div>",
-            "email_to": recipient_email,
-        }
-        self.env["mail.mail"].sudo().create(mail_values).send()
+        body_html = f"<div>{reply_text.replace(chr(10), '<br/>')}</div>"
+
+        self.env["mail.mail"].sudo().create(
+            {
+                "subject": subject if subject.lower().startswith("re:") else f"Re: {subject}",
+                "body_html": body_html,
+                "email_to": recipient_email,
+            }
+        ).send()
+
         return True
 
     def action_mark_processed(self):
+        """Marca manualmente el correo como procesado."""
         for record in self:
             record.state = "processed"
         return True
 
     def action_mark_error(self):
+        """Marca manualmente el correo como error."""
         for record in self:
             record.state = "error"
         return True
 
     def action_reset_to_new(self):
+        """Devuelve el correo a estado pendiente."""
         for record in self:
             record.state = "new"
+        return True
+
+    def action_process_now(self):
+        """Lanza manualmente el procesamiento de correos pendientes o con error."""
+        for record in self:
+            if record.state in ("new", "error"):
+                record.sudo().write({"state": "processing"})
+                record._trigger_intake_processing()
         return True

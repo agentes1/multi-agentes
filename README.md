@@ -2,11 +2,12 @@
 
 Backend Python multi-agente integrado con Odoo 18 para clasificar solicitudes de clientes, crear tickets de helpdesk y generar presupuestos comerciales en Odoo.
 
-El flujo actual no usa un endpoint generico `/process`: Odoo llama a tres endpoints especificos del backend:
+El flujo actual no usa un endpoint generico `/process`: Odoo llama a endpoints especificos del backend segun el origen de la accion:
 
 1. `/assistant/incoming-email`: procesa correos entrantes guardados por Odoo.
 2. `/assistant/ticket-entry`: procesa tickets de helpdesk ya creados.
 3. `/assistant/discuss-message`: procesa mensajes posteriores en el chat de Discuss.
+4. `/assistant/budget-from-ticket`: crea el presupuesto cuando un ticket pasa a Ready for next stage.
 
 ## 1. Arquitectura
 
@@ -25,8 +26,8 @@ Componentes principales:
 - `api.py`: capa HTTP con FastAPI. Mantiene endpoints finos y delega la logica.
 - `orchestration/`: adapta payloads externos y decide que agente ejecutar.
 - `routing/`: router semantico determinista para clasificar texto como `budget` o `discard`.
-- `agents/intake_agent/`: convierte correos/chats en tickets de helpdesk.
-- `agents/budget_agent/`: crea contactos, presupuestos y lineas de venta en Odoo.
+- `agents/intake_agent/`: convierte correos entrantes en tickets de helpdesk.
+- `agents/budget_agent/`: lee el contenido completo del ticket, selecciona productos reales del catalogo de Odoo y crea presupuestos.
 - `agents/general_agent/`: respuesta fija para mensajes descartados o no accionables.
 - `odoo/api_wrapper.py`: cliente XML-RPC para modelos de Odoo.
 - `odoo/odoo_mcp_server.py` y `odoo/mcp_client.py`: tools locales tipo MCP para catalogo, clientes y presupuestos.
@@ -38,14 +39,20 @@ Componentes principales:
 
 1. Odoo recibe un correo mediante `fetchmail`/Gmail.
 2. El addon `mail_inbox_input` crea un `mail.inbox.message`.
-3. Al crear el registro, el addon llama a `POST /assistant/incoming-email`.
-4. `IncomingEmailOrchestrator` adapta el correo a `source_input`.
-5. `intake_agent` ejecuta este grafo:
+3. El registro queda en estado `new`. No se procesa dentro del `create()`.
+4. El cron `Mail Inbox: Process intake queue` llama a `mail.inbox.message._cron_process_pending_intake()`.
+5. `_cron_process_pending_intake()` marca el registro como `processing` y llama a `_trigger_intake_processing()`.
+6. `_trigger_intake_processing()` construye el payload con `_build_backend_payload()` y llama a `POST /assistant/incoming-email`.
+7. `IncomingEmailOrchestrator` adapta el correo a `source_input`.
+8. `intake_agent` ejecuta este grafo:
    - `prepare_input_node`: normaliza email/chat a texto.
    - `extract_request_node`: pide al LLM un JSON estructurado.
    - `prepare_ticket_node`: mapea tipo, equipo, categoria, prioridad y etiquetas.
    - `create_ticket_node`: crea `helpdesk.ticket` en Odoo.
-6. Al crearse el ticket, el addon `helpdesk_virtual_assistant` abre un chat en Discuss y continua el flujo de ticket.
+9. El ticket creado desde email se crea con contexto `assistant_ticket_origin=email`, `skip_virtual_assistant_chat=True` y `skip_virtual_assistant_followup=True`.
+10. Por ese contexto, `helpdesk_virtual_assistant` no abre Discuss para ese ticket.
+11. `IncomingEmailOrchestrator` reutiliza `TicketEntryOrchestrator` solo para generar el texto de respuesta al correo.
+12. `mail_inbox_input` marca el email como `processed`, guarda `generated_ticket_id` y envia la respuesta por email.
 
 ### 2.2 Ticket nuevo en Helpdesk
 
@@ -54,8 +61,10 @@ Componentes principales:
 3. El addon publica un primer mensaje fijo de recepcion.
 4. El addon llama a `POST /assistant/ticket-entry`.
 5. `TicketEntryOrchestrator` construye texto enrutable y ejecuta `routing.semantic_router.router`.
-6. Si la ruta es `budget`, se ejecuta `budget_agent`.
-7. Si la ruta es `discard`, responde `general_agent`.
+6. Si la ruta es `budget`, no crea presupuesto todavia. Responde que el presupuesto se creara cuando el ticket este en Ready for next stage.
+7. Si la ruta es `discard` o `issue`, responde `general_agent`.
+
+Importante: crear un ticket a mano no crea un presupuesto. El presupuesto se dispara despues, al pasar el ticket a Ready for next stage.
 
 ### 2.3 Mensajes posteriores en Discuss
 
@@ -64,18 +73,32 @@ Componentes principales:
 3. Ignora mensajes escritos por el propio asistente para evitar bucles.
 4. Llama a `POST /assistant/discuss-message`.
 5. `DiscussMessageOrchestrator` enruta solo el mensaje nuevo, no el titulo historico del ticket.
-6. Si el mensaje pide presupuesto, ejecuta `budget_agent`; si no, devuelve fallback general o no publica nada util.
+6. Si el mensaje pide presupuesto, responde que se creara al pasar el ticket a Ready for next stage.
+7. Si no es presupuesto, devuelve fallback general o no publica nada util.
 
-### 2.4 Presupuestos
+### 2.4 Presupuesto al pasar a Ready for next stage
 
-Cuando una entrada llega a `budget_agent`, el grafo ejecuta:
+El presupuesto se crea desde Odoo cuando cambia el ticket:
 
-1. `prepare_budget_node`: busca productos reales de Odoo que coincidan con los requisitos detectados.
-2. `ensure_partner_node`: obtiene o crea el contacto de la empresa.
-3. `create_odoo_quote_node`: crea un `sale.order` y sus lineas.
-4. `compose_budget_reply_node`: redacta una respuesta final con LLM. Si el LLM falla, usa una respuesta fallback.
+1. El usuario mueve el ticket a Ready for next stage.
+2. `helpdesk.ticket.write()` detecta `kanban_state == "done"`.
+3. Si el ticket no tiene `assistant_budget_created` ni `assistant_sale_order_id`, llama a `_trigger_budget_from_ready_state()`.
+4. `_trigger_budget_from_ready_state()` llama a `POST /assistant/budget-from-ticket`.
+5. `BudgetFromTicketOrchestrator` ejecuta `budget_agent`.
+
+El grafo de `budget_agent` ejecuta:
+
+1. `prepare_budget_node`: recibe el contenido del ticket tal cual, extrae `company_name`, `project_summary` y `requirements` con el LLM, obtiene el catalogo real de Odoo con `list_catalog()` y pide al LLM que seleccione `product_ids` validos.
+2. `create_odoo_quote_node`: crea o reutiliza un `sale.order`. Usa `client_order_ref = helpdesk-ticket-<ticket_id>` para evitar duplicados.
+3. `compose_budget_reply_node`: redacta una respuesta final con LLM. Si el LLM falla, usa una respuesta fallback.
 
 El resultado incluye `quote_summary` con `sale_order_id`, productos, lineas, subtotal, total y moneda.
+
+Odoo guarda el resultado en el ticket:
+
+- `assistant_budget_created`
+- `assistant_sale_order_id`
+- `assistant_budget_response`
 
 ## 3. Requisitos
 

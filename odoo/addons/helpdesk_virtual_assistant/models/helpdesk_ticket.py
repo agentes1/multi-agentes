@@ -4,7 +4,7 @@ import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from odoo import api, models
+from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
@@ -14,14 +14,40 @@ class HelpdeskTicket(models.Model):
     # Este archivo solo se ocupa del arranque del flujo: abrir chat y pedir primera respuesta.
     _inherit = "helpdesk.ticket"
 
+    assistant_budget_created = fields.Boolean(
+        string="Assistant Budget Created",
+        readonly=True,
+        copy=False,
+    )
+    assistant_sale_order_id = fields.Integer(
+        string="Assistant Sale Order ID",
+        readonly=True,
+        copy=False,
+    )
+    assistant_budget_response = fields.Text(
+        string="Assistant Budget Response",
+        readonly=True,
+        copy=False,
+    )
+
     @api.model_create_multi
     def create(self, vals_list):
         tickets = super().create(vals_list)
         ticket_origin = self.env.context.get("assistant_ticket_origin")
+        skip_assistant_chat = (
+            ticket_origin == "email"
+            or self.env.context.get("skip_virtual_assistant_chat")
+            or self.env.context.get("skip_virtual_assistant_flow")
+        )
         for ticket in tickets:
             # Los tickets creados desde email siguen convergiendo en helpdesk,
             # pero la primera respuesta debe salir por correo, no por Discuss.
-            if ticket_origin == "email":
+            if skip_assistant_chat:
+                _logger.info(
+                    "Skipping virtual assistant Discuss chat for ticket %s because context origin is %s.",
+                    ticket.id,
+                    ticket_origin,
+                )
                 continue
             try:
                 # Cada ticket nuevo arranca automáticamente una conversación en Discuss.
@@ -32,6 +58,79 @@ class HelpdeskTicket(models.Model):
                     ticket.id,
                 )
         return tickets
+
+    def write(self, vals):
+        trigger_budget_tickets = self.env["helpdesk.ticket"]
+        if vals.get("kanban_state") == "done" and not self.env.context.get("skip_assistant_budget_trigger"):
+            trigger_budget_tickets = self.filtered(
+                lambda ticket: (
+                    ticket.kanban_state != "done"
+                    and not ticket.assistant_budget_created
+                    and not ticket.assistant_sale_order_id
+                )
+            )
+
+        result = super().write(vals)
+
+        for ticket in trigger_budget_tickets:
+            try:
+                ticket._trigger_budget_from_ready_state()
+            except Exception:
+                _logger.exception(
+                    "Budget assistant could not create a quote for ticket %s",
+                    ticket.id,
+                )
+
+        return result
+
+    def _trigger_budget_from_ready_state(self):
+        self.ensure_one()
+        if self.assistant_budget_created or self.assistant_sale_order_id:
+            return
+
+        endpoint_url = self._get_budget_from_ticket_endpoint_url()
+        payload = {
+            "ticket_id": self.id,
+            "title": self.name or "",
+            "description": self.description or "",
+            "partner_id": self.partner_id.id if self.partner_id else None,
+            "partner_name": self.partner_id.name if self.partner_id else self.partner_name or "",
+            "partner_email": self.partner_id.email if self.partner_id else self.partner_email or "",
+            "thread_id": f"odoo-ticket-budget-{self.id}",
+        }
+
+        request = Request(
+            endpoint_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with urlopen(request, timeout=60) as response:
+            raw_body = response.read().decode("utf-8")
+        parsed = json.loads(raw_body)
+
+        if not parsed.get("ok"):
+            raise RuntimeError(parsed.get("error") or "Budget backend returned an error")
+
+        sale_order_id = parsed.get("sale_order_id") or parsed.get("quote_summary", {}).get("sale_order_id")
+        self.with_context(skip_assistant_budget_trigger=True).sudo().write(
+            {
+                "assistant_budget_created": bool(sale_order_id),
+                "assistant_sale_order_id": sale_order_id or 0,
+                "assistant_budget_response": parsed.get("reply_text", ""),
+            }
+        )
+
+    def _get_budget_from_ticket_endpoint_url(self):
+        self.ensure_one()
+        return self.env["ir.config_parameter"].sudo().get_param(
+            "helpdesk_virtual_assistant.backend_budget_from_ticket_url",
+            os.getenv(
+                "HELP_DESK_VIRTUAL_ASSISTANT_BUDGET_FROM_TICKET_URL",
+                "http://assistant-backend:8000/assistant/budget-from-ticket",
+            ),
+        )
 
     def _open_virtual_assistant_chat(self):
         self.ensure_one()

@@ -129,10 +129,20 @@ def get_customer_history(partner_id: int, limit: int = 10) -> dict[str, Any]:
 
 
 @mcp.tool()
-def create_sale_order(partner_id: int) -> int:
+def find_sale_order_by_client_ref(client_order_ref: str) -> dict[str, Any] | None:
+    """Busca un presupuesto por referencia externa para evitar duplicados."""
+    wrapper = _get_wrapper()
+    return wrapper.find_sale_order_by_client_ref(client_order_ref)
+
+
+@mcp.tool()
+def create_sale_order(partner_id: int, client_order_ref: str | None = None) -> int:
     """Crea una cabecera de presupuesto en Odoo."""
     wrapper = _get_wrapper()
-    return wrapper.create_sale_order(partner_id=partner_id)
+    return wrapper.create_sale_order(
+        partner_id=partner_id,
+        client_order_ref=client_order_ref,
+    )
 
 
 @mcp.tool()

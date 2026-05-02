@@ -1,9 +1,10 @@
 """API HTTP principal del proyecto.
 
-Este archivo expone los tres puntos de entrada externos del sistema:
+Este archivo expone los puntos de entrada externos del sistema:
 - ticket creado manualmente en Odoo
 - mensaje nuevo en Discuss
 - correo entrante procesado por mail_inbox_input
+- presupuesto creado al marcar un ticket como Ready for next stage
 
 Cada endpoint delega la lógica real en un orquestador de orchestration/,
 de modo que la API se mantenga como una capa fina de entrada/salida.
@@ -12,9 +13,10 @@ de modo que la API se mantenga como una capa fina de entrada/salida.
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from orchestration.assistant_discuss import build_discuss_message_orchestrator
+from orchestration.assistant_budget import build_budget_from_ticket_orchestrator
 from orchestration.assistant_email import build_incoming_email_orchestrator
 from orchestration.assistant_entry import build_ticket_entry_orchestrator
 
@@ -43,10 +45,10 @@ class AssistantTicketEntryResponse(BaseModel):
     route_name: str | None = None
     agent_name: str | None = None
     reply_text: str = ""
-    normalized_request: dict = {}
-    quote_summary: dict = {}
+    normalized_request: dict = Field(default_factory=dict)
+    quote_summary: dict = Field(default_factory=dict)
     error: str | None = None
-    trace: list[str] = []
+    trace: list[str] = Field(default_factory=list)
 
 
 class AssistantDiscussMessageRequest(BaseModel):
@@ -67,10 +69,10 @@ class AssistantDiscussMessageResponse(BaseModel):
     route_name: str | None = None
     agent_name: str | None = None
     reply_text: str = ""
-    normalized_request: dict = {}
-    quote_summary: dict = {}
+    normalized_request: dict = Field(default_factory=dict)
+    quote_summary: dict = Field(default_factory=dict)
     error: str | None = None
-    trace: list[str] = []
+    trace: list[str] = Field(default_factory=list)
 
 
 class AssistantIncomingEmailRequest(BaseModel):
@@ -95,12 +97,33 @@ class AssistantIncomingEmailResponse(BaseModel):
     reply_text: str = ""
     route_name: str | None = None
     agent_name: str | None = None
-    normalized_request: dict = {}
-    ticket_payload: dict = {}
-    quote_summary: dict = {}
-    warnings: list[str] = []
+    normalized_request: dict = Field(default_factory=dict)
+    ticket_payload: dict = Field(default_factory=dict)
+    quote_summary: dict = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
-    trace: list[str] = []
+    trace: list[str] = Field(default_factory=list)
+
+
+class AssistantBudgetFromTicketRequest(BaseModel):
+    ticket_id: int | None = None
+    title: str = ""
+    description: str = ""
+    partner_id: int | None = None
+    partner_name: str = ""
+    partner_email: str = ""
+    thread_id: str | None = None
+
+
+class AssistantBudgetFromTicketResponse(BaseModel):
+    ok: bool
+    agent_name: str | None = None
+    reply_text: str = ""
+    sale_order_id: int | None = None
+    normalized_request: dict = Field(default_factory=dict)
+    quote_summary: dict = Field(default_factory=dict)
+    error: str | None = None
+    trace: list[str] = Field(default_factory=list)
 
 
 @app.post("/assistant/ticket-entry", response_model=AssistantTicketEntryResponse)
@@ -162,6 +185,25 @@ async def assistant_incoming_email(request: AssistantIncomingEmailRequest):
     result = await build_incoming_email_orchestrator().handle_incoming_email(
         payload=payload,
         thread_id=request.thread_id,
+    )
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
+@app.post("/assistant/budget-from-ticket", response_model=AssistantBudgetFromTicketResponse)
+async def assistant_budget_from_ticket(request: AssistantBudgetFromTicketRequest):
+    ticket = {
+        "id": request.ticket_id,
+        "name": request.title,
+        "description": request.description,
+        "partner_id": request.partner_id,
+        "partner_name": request.partner_name,
+        "partner_email": request.partner_email,
+    }
+    result = await build_budget_from_ticket_orchestrator().handle_budget_from_ticket(
+        ticket=ticket,
+        thread_id=request.thread_id or f"odoo-ticket-budget-{request.ticket_id}",
     )
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result)

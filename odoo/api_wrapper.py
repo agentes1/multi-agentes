@@ -1,7 +1,10 @@
 import xmlrpc.client
+import logging
 
 # Usage Examples can be found in tests.test_odoo_api_wrapper
 # Credentials can be found in shared/config
+
+_logger = logging.getLogger(__name__)
 
 class OdooAPIWrapper:
     def __init__(self, url, username, password, db):
@@ -27,9 +30,9 @@ class OdooAPIWrapper:
         try:
             client = xmlrpc.client.ServerProxy(f'{self._url}/db')
             dbs = client.list()
-            print("Databases available in Odoo:", dbs)
+            _logger.info("Databases available in Odoo: %s", dbs)
         except Exception as e:
-            print("Could not list DBs:", e)
+            _logger.warning("Could not list DBs: %s", e)
 
     def get_all(self, tablename, limit=100):
         return self._models.execute_kw(self._db, self._uid, self._password, tablename, 'search_read', [], {'limit': limit})
@@ -168,8 +171,17 @@ class OdooAPIWrapper:
         )
         return motive_ids[0] if motive_ids else None
 
-    # crea un ticket real en el modelo helpdesk.ticket
-    # se mantiene simple: solo campos necesarios para tu flujo local
+    def get_ticket_channel_id_by_name(self, channel_name):
+        channels = self.search_read(
+            "helpdesk.ticket.channel",
+            [("name", "=ilike", channel_name)],
+            fields=["id", "name"],
+            limit=10,
+        )
+
+        return channels[0]["id"] if channels else None
+
+
     def create_helpdesk_ticket(
         self,
         title,
@@ -181,46 +193,63 @@ class OdooAPIWrapper:
         tag_ids=None,
         motive_id=None,
         partner_id=None,
+        partner_name=None,
+        partner_email=None,
         origin_channel=None,
     ):
         vals = {
-            'name': title,
-            'description': description,
-            'team_id': team_id,
-            'priority': priority,
+            "name": title,
+            "description": description,
+            "team_id": team_id,
+            "priority": priority,
         }
 
-        # campos opcionales: solo se añaden si existen
         if type_id:
-            vals['type_id'] = type_id
+            vals["type_id"] = type_id
 
         if category_id:
-            vals['category_id'] = category_id
+            vals["category_id"] = category_id
 
         if motive_id:
-            vals['motive_id'] = motive_id
+            vals["motive_id"] = motive_id
 
         if partner_id:
-            vals['partner_id'] = partner_id
+            vals["partner_id"] = partner_id
 
-        # relación many2many con etiquetas
+        if partner_name:
+            vals["partner_name"] = partner_name
+
+        if partner_email:
+            vals["partner_email"] = partner_email
+
         if tag_ids:
-            vals['tag_ids'] = [(6, 0, tag_ids)]
+            vals["tag_ids"] = [(6, 0, tag_ids)]
+
+        normalized_origin = str(origin_channel or "").lower()
+
+        if normalized_origin == "email":
+            channel_id = self.get_ticket_channel_id_by_name("Email")
+
+            if channel_id:
+                vals["channel_id"] = channel_id
 
         context = {}
-        if origin_channel:
-            context['assistant_ticket_origin'] = origin_channel
+        if normalized_origin:
+            context["assistant_ticket_origin"] = normalized_origin
+
+            if normalized_origin == "email":
+                context["skip_virtual_assistant_chat"] = True
+                context["skip_virtual_assistant_followup"] = True
 
         return self._models.execute_kw(
             self._db,
             self._uid,
             self._password,
-            'helpdesk.ticket',
-            'create',
+            "helpdesk.ticket",
+            "create",
             [vals],
-            {'context': context} if context else {},
+            {"context": context} if context else {},
         )
-    
     def get_helpdesk_ticket(self, ticket_id):
         result = self._models.execute_kw(
             self._db,
@@ -253,7 +282,7 @@ class OdooAPIWrapper:
             "read",
             [ids],
         )
-
+    
     def find_company(self, name, exact=False, limit=5):
         operator = '=ilike' if exact else 'ilike'
         return self.search_read(
@@ -294,14 +323,26 @@ class OdooAPIWrapper:
         )
         return products[0] if products else None
 
-    def create_sale_order(self, partner_id):
+    def find_sale_order_by_client_ref(self, client_order_ref):
+        orders = self.search_read(
+            'sale.order',
+            [('client_order_ref', '=', client_order_ref)],
+            fields=['id', 'name', 'state', 'amount_untaxed', 'amount_total', 'client_order_ref'],
+            limit=1,
+        )
+        return orders[0] if orders else None
+
+    def create_sale_order(self, partner_id, client_order_ref=None):
+        vals = {'partner_id': partner_id}
+        if client_order_ref:
+            vals['client_order_ref'] = client_order_ref
         return self._models.execute_kw(
             self._db,
             self._uid,
             self._password,
             'sale.order',
             'create',
-            [{'partner_id': partner_id}],
+            [vals],
         )
 
     def create_sale_order_line(self, order_id, product_id, quantity=1):
