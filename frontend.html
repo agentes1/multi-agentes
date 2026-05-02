@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pipeline Visualizer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0f0f0f; --bg2: #161616; --bg3: #1f1f1f;
+      --border:  #2a2a2a; --border2: #383838;
+      --text:    #e2e2e2; --text2: #9a9a9a; --text3: #505050;
+      --blue:    #4a8ff5; --blue-bg: #0d1f3c;
+      --green:   #3ecf8e; --green-bg: #0a2318;
+      --red:     #f26c6c; --red-bg: #2a1010;
+      --yellow:  #f0c060; --yellow-bg: #2a2010;
+      --radius:  8px;
+      --mono:    'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px; min-height: 100vh;
+      display: grid; grid-template-columns: 290px 1fr;
+    }
+    @media (max-width: 700px) { body { grid-template-columns: 1fr; } }
+
+    aside {
+      background: var(--bg2); border-right: 1px solid var(--border);
+      padding: 20px 16px; overflow-y: auto;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--text3); margin-bottom: 22px;
+    }
+    .logo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+    .block { margin-bottom: 28px; }
+    .block-head {
+      display: flex; align-items: center; gap: 8px;
+      padding-bottom: 10px; margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .pill {
+      font-size: 9px; font-weight: 700; padding: 2px 7px;
+      border-radius: 3px; letter-spacing: .06em; text-transform: uppercase;
+    }
+    .pill-blue  { background: #1a2a4a; color: var(--blue); }
+    .pill-green { background: #1a3020; color: var(--green); }
+    .block-name { font-size: 12px; font-weight: 500; }
+    .field { margin-bottom: 9px; }
+    label { display: block; font-size: 10px; font-weight: 600; color: var(--text3);
+            letter-spacing: .05em; text-transform: uppercase; margin-bottom: 3px; }
+    input, textarea {
+      width: 100%; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--text); font-size: 11.5px;
+      padding: 6px 8px; font-family: inherit; resize: vertical; outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, textarea:focus { border-color: var(--border2); }
+    .btn {
+      width: 100%; padding: 8px; font-size: 12px; font-weight: 600;
+      border-radius: var(--radius); border: none; cursor: pointer;
+      letter-spacing: .02em; transition: opacity .15s; margin-top: 4px;
+    }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn:hover:not(:disabled) { opacity: .85; }
+    .btn-blue  { background: var(--blue);  color: #fff; }
+    .btn-green { background: var(--green); color: #0a2318; }
+
+    main { padding: 28px 24px; overflow-y: auto; }
+
+    .empty {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 60vh;
+      gap: 12px; color: var(--text3); text-align: center;
+    }
+    .empty-icon { font-size: 28px; opacity: .2; }
+    .empty-msg  { font-size: 12.5px; line-height: 1.7; max-width: 220px; }
+
+    #result { display: none; }
+    .result-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .result-title { font-size: 15px; font-weight: 500; }
+    .result-id    { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+    .result-badge {
+      margin-left: auto; font-size: 11px; font-weight: 500;
+      padding: 4px 10px; border-radius: 20px; border: 1px solid;
+    }
+    .badge-ok    { color: var(--green);  border-color: #1a5030; background: var(--green-bg); }
+    .badge-warn  { color: var(--yellow); border-color: #5a4020; background: var(--yellow-bg); }
+    .badge-err   { color: var(--red);    border-color: #502020; background: var(--red-bg); }
+    .badge-load  { color: var(--blue);   border-color: #2a4070; background: var(--blue-bg);
+                   animation: blink 1s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    .pipeline {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 6px; margin-bottom: 24px;
+    }
+    .node {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 9px 13px; background: var(--bg3);
+      min-width: 120px; flex: 1; max-width: 180px; transition: all .3s;
+    }
+    .node.done   { background: var(--green-bg);  border-color: #1a6640; }
+    .node.warn   { background: var(--yellow-bg); border-color: #5a4020; }
+    .node.error  { background: var(--red-bg);    border-color: #7a2020; }
+    .node.spin   { background: var(--blue-bg);   border-color: #2a5aad;
+                   animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    .node-name { font-size: 11px; font-weight: 500; font-family: var(--mono); color: var(--text2); }
+    .node-sub  { font-size: 9.5px; color: var(--text3); margin-top: 2px; }
+    .node-st   { font-size: 9px; margin-top: 5px; min-height: 12px; }
+    .node.done  .node-st { color: var(--green); }
+    .node.warn  .node-st { color: var(--yellow); }
+    .node.error .node-st { color: var(--red); }
+    .node.spin  .node-st { color: var(--blue); }
+    .arrow { color: var(--text3); font-size: 14px; }
+
+    .section-title {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text3); margin-bottom: 10px;
+    }
+    .cards {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px; margin-bottom: 20px;
+    }
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+    }
+    .card-label { font-size: 10px; color: var(--text3); margin-bottom: 4px; }
+    .card-value { font-size: 15px; font-weight: 500; font-family: var(--mono); }
+    .card-value.ok   { color: var(--green); }
+    .card-value.warn { color: var(--yellow); }
+    .card-value.err  { color: var(--red); }
+
+    .reply-box {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+      font-size: 12.5px; line-height: 1.75; color: var(--text2);
+      white-space: pre-wrap; word-break: break-word; margin-bottom: 16px;
+    }
+    .error-box {
+      background: var(--red-bg); border: 1px solid #502020;
+      border-radius: var(--radius); padding: 12px 14px;
+      font-size: 12px; color: var(--red); font-family: var(--mono);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .trace-box {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px; margin-top: 10px;
+      font-size: 11px; color: var(--text3); font-family: var(--mono);
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 200px; overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<aside>
+  <div class="logo"><div class="logo-dot"></div>Pipeline Visualizer</div>
+
+  <div class="block">
+    <div class="block-head">
+      <span class="pill pill-blue">Intake</span>
+      <span class="block-name">Ticket Agent</span>
+    </div>
+    <div class="field"><label>Asunto del email</label>
+      <input id="i-subject" value="No puedo acceder al portal de clientes"></div>
+    <div class="field"><label>Email remitente</label>
+      <input id="i-from" value="ana.lopez@acme.es"></div>
+    <div class="field"><label>Nombre remitente</label>
+      <input id="i-name" value="Ana López"></div>
+    <div class="field"><label>Cuerpo del email</label>
+      <textarea id="i-body" rows="4">Hola, desde esta mañana no puedo iniciar sesión en el portal. Me indica credenciales incorrectas aunque uso la misma contraseña de siempre. ¿Podéis revisarlo? Gracias.</textarea></div>
+    <button class="btn btn-blue" id="btn-intake" onclick="runIntake()">Crear ticket →</button>
+  </div>
+
+  <div class="block">
+    <div class="block-head">
+      <span class="pill pill-green">Budget</span>
+      <span class="block-name">Budget Agent</span>
+    </div>
+    <div class="field"><label>Título del ticket</label>
+      <input id="b-title" value="Presupuesto implantación Odoo con CRM y facturación"></div>
+    <div class="field"><label>Descripción</label>
+      <textarea id="b-desc" rows="3">Queremos una propuesta económica para implantar Odoo con módulos de CRM, facturación y formación para el equipo.</textarea></div>
+    <div class="field"><label>Nombre del cliente</label>
+      <input id="b-partner" value="Acme SL"></div>
+    <div class="field"><label>Email del cliente</label>
+      <input id="b-email" value="contacto@acme.es"></div>
+    <button class="btn btn-green" id="btn-budget" onclick="runBudget()">Crear presupuesto →</button>
+  </div>
+</aside>
+
+<main>
+  <div class="empty" id="empty">
+    <div class="empty-icon">⬡</div>
+    <div class="empty-msg">Rellena un formulario y pulsa el botón.<br>El pipeline aparecerá aquí.</div>
+  </div>
+
+  <div id="result">
+    <div class="result-header">
+      <span class="pill" id="r-pill"></span>
+      <span class="result-title" id="r-title"></span>
+      <span class="result-id" id="r-id"></span>
+      <span class="result-badge badge-load" id="r-badge">Ejecutando…</span>
+    </div>
+    <div class="pipeline" id="pipeline"></div>
+    <div id="r-cards"></div>
+    <div id="r-reply"></div>
+    <div id="r-error"></div>
+  </div>
+</main>
+
+<script>
+const API = 'http://localhost:8000';
+
+const INTAKE_NODES = [
+  { id: 'prepare', name: 'prepare_input',   sub: 'Normaliza la entrada'  },
+  { id: 'extract', name: 'extract_request', sub: 'LLM → JSON'            },
+  { id: 'ticket',  name: 'prepare_ticket',  sub: 'Mapea al ticket Odoo'  },
+  { id: 'create',  name: 'create_ticket',   sub: 'Crea ticket en Odoo'   },
+];
+const BUDGET_NODES = [
+  { id: 'prepare', name: 'prepare_budget',       sub: 'Busca productos'       },
+  { id: 'partner', name: 'ensure_partner',        sub: 'Busca o crea contacto'},
+  { id: 'quote',   name: 'create_odoo_quote',     sub: 'Crea sale order'       },
+  { id: 'reply',   name: 'compose_budget_reply',  sub: 'LLM redacta respuesta'},
+];
+
+function setBtns(on) {
+  document.getElementById('btn-intake').disabled = on;
+  document.getElementById('btn-budget').disabled = on;
+}
+
+function showPanel(agent, isIntake) {
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('r-cards').innerHTML = '';
+  document.getElementById('r-reply').innerHTML = '';
+  document.getElementById('r-error').innerHTML = '';
+  const pill = document.getElementById('r-pill');
+  pill.textContent = isIntake ? 'INTAKE' : 'BUDGET';
+  pill.className = 'pill ' + (isIntake ? 'pill-blue' : 'pill-green');
+  document.getElementById('r-title').textContent = agent;
+  document.getElementById('r-id').textContent = '#' + Math.random().toString(36).slice(2,7).toUpperCase();
+  const badge = document.getElementById('r-badge');
+  badge.textContent = 'Ejecutando…';
+  badge.className = 'result-badge badge-load';
+}
+
+function buildPipeline(nodes) {
+  const c = document.getElementById('pipeline');
+  c.innerHTML = '';
+  nodes.forEach((n, i) => {
+    const d = document.createElement('div');
+    d.className = 'node spin'; d.id = 'nd-' + n.id;
+    d.innerHTML = `<div class="node-name">${n.name}</div><div class="node-sub">${n.sub}</div><div class="node-st">ejecutando…</div>`;
+    c.appendChild(d);
+    if (i < nodes.length - 1) {
+      const a = document.createElement('span');
+      a.className = 'arrow'; a.textContent = '→'; c.appendChild(a);
+    }
+  });
+}
+
+function animateNodes(nodes) {
+  let i = 0;
+  const iv = setInterval(() => {
+    if (i > 0) {
+      const prev = document.getElementById('nd-' + nodes[i-1].id);
+      if (prev) { prev.className = 'node done'; prev.querySelector('.node-st').textContent = '✓ completado'; }
+    }
+    if (i < nodes.length) {
+      i++;
+    } else {
+      clearInterval(iv);
+    }
+  }, 1400);
+  return iv;
+}
+
+function finishNodes(nodes, state) {
+  // state: 'done' | 'warn' | 'error'
+  const labels = { done: '✓ completado', warn: '⚠ descartado', error: '✗ error' };
+  nodes.forEach(n => {
+    const el = document.getElementById('nd-' + n.id);
+    if (!el) return;
+    el.className = 'node ' + state;
+    el.querySelector('.node-st').textContent = labels[state] || '✓';
+  });
+}
+
+function showCards(items) {
+  const c = document.getElementById('r-cards');
+  c.innerHTML = `<div class="section-title">Resultado</div><div class="cards"></div>`;
+  const grid = c.querySelector('.cards');
+  items.forEach(({ label, value, cls }) => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = `<div class="card-label">${label}</div><div class="card-value ${cls||''}">${value}</div>`;
+    grid.appendChild(d);
+  });
+}
+
+function showReply(text) {
+  if (!text) return;
+  document.getElementById('r-reply').innerHTML = `
+    <div class="section-title" style="margin-top:20px;margin-bottom:10px">Respuesta generada</div>
+    <div class="reply-box">${text}</div>`;
+}
+
+function showError(msg, trace) {
+  let html = `<div class="error-box">✗ ${msg}</div>`;
+  if (trace) html += `<div class="trace-box">${trace}</div>`;
+  document.getElementById('r-error').innerHTML = html;
+}
+
+// ── Llamada genérica a la API con manejo robusto de errores ──────────────────
+async function callAPI(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+
+  // Intentar parsear como JSON, si falla mostrar el texto raw
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+
+  return { ok: res.ok, status: res.status, data };
+}
+
+// ── Intake ────────────────────────────────────────────────────────────────────
+async function runIntake() {
+  setBtns(true);
+  showPanel('Intake Agent', true);
+  buildPipeline(INTAKE_NODES);
+  const anim = animateNodes(INTAKE_NODES);
+
+  try {
+    const { ok, data } = await callAPI(`${API}/assistant/incoming-email`, {
+      subject:     document.getElementById('i-subject').value,
+      email_from:  document.getElementById('i-from').value,
+      sender_name: document.getElementById('i-name').value,
+      body:        document.getElementById('i-body').value,
+    });
+
+    clearInterval(anim);
+    const badge = document.getElementById('r-badge');
+
+    if (!ok || data.ok === false) {
+      // Error real del servidor
+      finishNodes(INTAKE_NODES, 'error');
+      badge.textContent = 'Error'; badge.className = 'result-badge badge-err';
+      showError(data.error || 'Error desconocido', data.trace || null);
+
+    } else if (data.ticket_type === 'discard' || data.error) {
+      // El agente descartó el ticket (contenido insuficiente)
+      finishNodes(INTAKE_NODES, 'warn');
+      badge.textContent = 'Descartado'; badge.className = 'result-badge badge-warn';
+      showCards([{ label: 'Motivo', value: data.error || 'Solicitud descartada', cls: 'warn' }]);
+      if (data.final_text) showReply(data.final_text);
+
+    } else {
+      // Éxito
+      finishNodes(INTAKE_NODES, 'done');
+      badge.textContent = 'Completado'; badge.className = 'result-badge badge-ok';
+      const items = [];
+      if (data.ticket_id) items.push({ label: 'Ticket ID', value: '#' + data.ticket_id, cls: 'ok' });
+      const nr = data.normalized_request || {};
+      if (nr.company_name) items.push({ label: 'Empresa',  value: nr.company_name });
+      if (nr.ticket_type)  items.push({ label: 'Tipo',     value: nr.ticket_type  });
+      if (nr.urgency)      items.push({ label: 'Urgencia', value: nr.urgency      });
+      const tp = data.ticket_payload || {};
+      if (tp.team_name)    items.push({ label: 'Equipo',   value: tp.team_name    });
+      if (tp.priority)     items.push({ label: 'Prioridad',value: tp.priority     });
+      if (items.length) showCards(items);
+      if (data.final_text) showReply(data.final_text);
+    }
+
+  } catch (e) {
+    clearInterval(anim);
+    finishNodes(INTAKE_NODES, 'error');
+    const badge = document.getElementById('r-badge');
+    badge.textContent = 'Sin conexión'; badge.className = 'result-badge badge-err';
+    showError('No se pudo conectar con la API: ' + e.message);
+  }
+
+  setBtns(false);
+}
+
+// ── Budget ────────────────────────────────────────────────────────────────────
+async function runBudget() {
+  setBtns(true);
+  showPanel('Budget Agent', false);
+  buildPipeline(BUDGET_NODES);
+  const anim = animateNodes(BUDGET_NODES);
+
+  try {
+    const { ok, data } = await callAPI(`${API}/assistant/ticket-entry`, {
+      title:         document.getElementById('b-title').value,
+      description:   document.getElementById('b-desc').value,
+      partner_name:  document.getElementById('b-partner').value,
+      partner_email: document.getElementById('b-email').value,
+    });
+
+    clearInterval(anim);
+    const badge = document.getElementById('r-badge');
+
+    if (!ok || data.ok === false) {
+      finishNodes(BUDGET_NODES, 'error');
+      badge.textContent = 'Error'; badge.className = 'result-badge badge-err';
+      showError(data.error || 'Error desconocido', data.trace || null);
+
+    } else {
+      finishNodes(BUDGET_NODES, 'done');
+      badge.textContent = 'Completado'; badge.className = 'result-badge badge-ok';
+      const items = [];
+      const qs = data.quote_summary || {};
+      if (qs.sale_order_id) items.push({ label: 'Presupuesto ID', value: '#' + qs.sale_order_id, cls: 'ok' });
+      if (qs.total)         items.push({ label: 'Total',   value: qs.total + ' ' + (qs.currency || 'EUR'), cls: 'ok' });
+      if (qs.subtotal)      items.push({ label: 'Subtotal',value: qs.subtotal + ' EUR' });
+      const nr = data.normalized_request || {};
+      if (nr.company_name)  items.push({ label: 'Empresa', value: nr.company_name });
+      if (data.route_name)  items.push({ label: 'Ruta',    value: data.route_name });
+      if (data.agent_name)  items.push({ label: 'Agente',  value: data.agent_name });
+      if (items.length) showCards(items);
+      if (data.reply_text)  showReply(data.reply_text);
+    }
+
+  } catch (e) {
+    clearInterval(anim);
+    finishNodes(BUDGET_NODES, 'error');
+    const badge = document.getElementById('r-badge');
+    badge.textContent = 'Sin conexión'; badge.className = 'result-badge badge-err';
+    showError('No se pudo conectar con la API: ' + e.message);
+  }
+
+  setBtns(false);
+}
+</script>
+</body>
+</html>
