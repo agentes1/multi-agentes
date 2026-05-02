@@ -13,6 +13,7 @@
         "security/ir.model.access.csv",
         "views/mail_inbox_message_views.xml",
         "data/fetchmail_server.xml",
+        "data/ir_cron.xml",
     ],
     "installable": True,
     "application": True,

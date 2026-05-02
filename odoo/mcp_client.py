@@ -34,8 +34,14 @@ class OdooMCPClient:
     def get_customer_history(self, partner_id: int, limit: int = 10) -> dict:
         return odoo_mcp_server.get_customer_history(partner_id=partner_id, limit=limit)
 
-    def create_sale_order(self, partner_id: int) -> int:
-        return odoo_mcp_server.create_sale_order(partner_id=partner_id)
+    def find_sale_order_by_client_ref(self, client_order_ref: str) -> dict | None:
+        return odoo_mcp_server.find_sale_order_by_client_ref(client_order_ref=client_order_ref)
+
+    def create_sale_order(self, partner_id: int, client_order_ref: str | None = None) -> int:
+        return odoo_mcp_server.create_sale_order(
+            partner_id=partner_id,
+            client_order_ref=client_order_ref,
+        )
 
     def create_sale_order_line(self, order_id: int, product_id: int, quantity: int = 1) -> int:
         return odoo_mcp_server.create_sale_order_line(

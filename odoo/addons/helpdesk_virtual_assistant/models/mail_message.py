@@ -154,7 +154,7 @@ class MailMessage(models.Model):
         )
 
         try:
-            with urlopen(request, timeout=10) as response:
+            with urlopen(request, timeout=60) as response:
                 raw_body = response.read().decode("utf-8")
             parsed = json.loads(raw_body)
             reply_text = str(parsed.get("reply_text", "")).strip()
