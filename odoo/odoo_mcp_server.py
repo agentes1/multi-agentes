@@ -1,6 +1,8 @@
-from mcp.server.fastmcp import FastMCP
 from __future__ import annotations
+
 from typing import Any
+
+from mcp.server.fastmcp import FastMCP
 
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 from odoo.api import OdooAPI, Table
@@ -27,20 +29,24 @@ def list_catalog() -> dict[str, Any]:
 @mcp.tool()
 def find_company(name: str, exact: bool = False, limit: int = 5) -> list[dict[str, Any]]:
     """Busca empresas en Odoo por nombre para enriquecer el contexto del agente."""
-    return odoo.get_by_value(
-        Table.Contact, 
-        { 'is_company': True, 'name': name },
+    companies = odoo.get_by_value(
+        Table.Contact,
+        {'name': name},
         ['id', 'email', 'name', 'is_company'],
-        exact,
-        limit
+        exact=exact,
+        limit=limit,
     )
+    return [c for c in (companies or []) if c.get('is_company')]
 
 
 @mcp.tool()
 def get_product_catalog_snapshot(product_ids: list[int]) -> list[dict[str, Any]]:
     """Devuelve una vista resumida y enriquecida del catálogo para una lista de productos."""
     products = odoo.get_by_id(Table.Product, product_ids, ['id', 'name', 'default_code', 'lst_price', 'description'])
-    for p in products: p['price'] = p.pop('lst_price')
+    if not products:
+        return []
+    for p in products:
+        p['price'] = p.pop('lst_price', 0)
     return products
 
 
@@ -93,40 +99,35 @@ def get_customer_profile(company_name: str) -> dict[str, Any]:
 @mcp.tool()
 def get_customer_history(partner_id: int, limit: int = 10) -> dict[str, Any]:
     """Recupera historial comercial básico del cliente en Odoo."""
-    client_orders = odoo.get_by_value(Table.Order, {'partner_id': partner_id}, ['id', 'name', 'state', 'amount_total', 'date_order'], limit=limit)
-    client_tickets = odoo.get_by_value(Table.Ticket, {'partner_id': partner_id}, ['id', 'name', 'stage_id', 'team_id'], limit=limit)
-    return { 'orders': client_orders, 'tickets': client_tickets }
+    client_orders = odoo.get_by_value(Table.Order, {'partner_id': partner_id}, ['id', 'name', 'state', 'amount_total', 'date_order'], exact=True, limit=limit)
+    client_tickets = odoo.get_by_value(Table.Ticket, {'partner_id': partner_id}, ['id', 'name', 'stage_id', 'team_id'], exact=True, limit=limit)
+    return {'orders': client_orders or [], 'tickets': client_tickets or []}
 
 
 @mcp.tool()
-<<<<<<< HEAD
 def find_sale_order_by_client_ref(client_order_ref: str) -> dict[str, Any] | None:
     """Busca un presupuesto por referencia externa para evitar duplicados."""
-    wrapper = _get_wrapper()
-    return wrapper.find_sale_order_by_client_ref(client_order_ref)
+    orders = odoo.get_by_value(Table.Order, {'client_order_ref': client_order_ref}, exact=True, limit=1)
+    return orders[0] if orders else None
 
 
 @mcp.tool()
 def create_sale_order(partner_id: int, client_order_ref: str | None = None) -> int:
     """Crea una cabecera de presupuesto en Odoo."""
-    wrapper = _get_wrapper()
-    return wrapper.create_sale_order(
-        partner_id=partner_id,
-        client_order_ref=client_order_ref,
-    )
-=======
-def create_sale_order(partner_id: int) -> int | None:
-    """Crea una cabecera de presupuesto en Odoo."""
-    ids = odoo.create(Table.Order, [{'partner_id': partner_id}])
+    data: dict[str, Any] = {'partner_id': partner_id}
+    if client_order_ref:
+        data['client_order_ref'] = client_order_ref
+    ids = odoo.create(Table.Order, [data])
     return ids[0] if ids else None
->>>>>>> origin
 
 
 @mcp.tool()
-def create_sale_order_line(order_id: int, product_id: int, quantity: int = 1) -> int | None:
+def create_sale_order_line(order_id: int, product_id: int, quantity: float = 1) -> int:
     """Añade una línea a un presupuesto existente."""
-    ids = odoo.create(Table.OrderLine, [{ 'order_id': order_id, 'product_id': product_id, 'product_uom_qty': quantity }])
-    return ids[0] if ids else None
+    ids = odoo.create(Table.OrderLine, [{'order_id': order_id, 'product_id': product_id, 'product_uom_qty': quantity}])
+    if not ids:
+        raise RuntimeError(f"Odoo no devolvió ID al crear línea para order_id={order_id}")
+    return ids[0]
 
 
 @mcp.tool()
@@ -137,11 +138,11 @@ def get_sale_order(order_id: int) -> dict[str, Any] | None:
 
 
 @mcp.tool()
-def get_sale_order_lines(order_id: int) -> list[dict[str, Any]] | None:
+def get_sale_order_lines(order_id: int) -> list[dict[str, Any]]:
     """Lee las líneas de un presupuesto existente."""
     fields = ['name', 'product_id', 'product_uom_qty', 'price_unit', 'price_subtotal']
     orderlines = odoo.get_by_value(Table.OrderLine, {'order_id': order_id}, fields, exact=True)
-    return orderlines if orderlines else None
+    return orderlines or []
 
 
 @mcp.tool()

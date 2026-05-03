@@ -271,8 +271,8 @@ async def compose_budget_reply_node(state: BudgetState, config: RunnableConfig) 
     deps = _get_deps(config)
     tools = deps.tools
 
-    request = state["normalized_request"]
-    quote = state["quote_summary"]
+    request = state.get("normalized_request") or {}
+    quote = state.get("quote_summary") or {}
     products = quote.get("selected_products", [])
 
     company_name = quote.get("company_name", "cliente")

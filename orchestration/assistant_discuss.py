@@ -24,11 +24,12 @@ class DiscussMessageOrchestrator:
         trace.append(f"route_decided:{route_name}")
 
         if route_name in {"discard", "issue"}:
+            reply_text = await build_general_response(text=text, model=model)
             return {
                 "ok": True,
                 "route_name": route_name,
                 "agent_name": GENERAL_AGENT_NAME,
-                "reply_text": build_general_response(),
+                "reply_text": reply_text,
                 "normalized_request": {},
                 "quote_summary": {},
                 "trace": trace + [f"agent_completed:{GENERAL_AGENT_NAME}"],

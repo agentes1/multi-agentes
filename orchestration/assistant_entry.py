@@ -26,7 +26,10 @@ class TicketEntryOrchestrator:
         trace.append(f"route_decided:{route_name}")
 
         if route_name in {"discard", "issue"}:
-            reply_text = build_general_response()
+            reply_text = await build_general_response(
+                text=build_ticket_text(ticket),
+                model=model,
+            )
             return {
                 "ok": True,
                 "route_name": route_name,
