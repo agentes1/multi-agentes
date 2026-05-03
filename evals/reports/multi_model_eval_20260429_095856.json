@@ -1,0 +1,339 @@
+{
+  "run_id": "20260429_095856",
+  "models": [
+    "ministral-3:8b",
+    "llama3:8b",
+    "qwen3.5:9b",
+    "gemma4:e4b"
+  ],
+  "cases_total": 5,
+  "summary_by_model": {
+    "ministral-3:8b": {
+      "total_cases": 5,
+      "success_rate": 1.0,
+      "answer_relevancy_mean": 0.8666666666666667,
+      "geval_mean": 0.46,
+      "latency_p50_ms": 16903.72,
+      "latency_p95_ms": 17544.59,
+      "errors": {
+        "total": 0,
+        "rate": 0.0,
+        "types": {}
+      }
+    },
+    "llama3:8b": {
+      "total_cases": 5,
+      "success_rate": 1.0,
+      "answer_relevancy_mean": 0.7805555555555556,
+      "geval_mean": 0.12000000000000001,
+      "latency_p50_ms": 9051.8,
+      "latency_p95_ms": 9637.54,
+      "errors": {
+        "total": 0,
+        "rate": 0.0,
+        "types": {}
+      }
+    },
+    "qwen3.5:9b": {
+      "total_cases": 5,
+      "success_rate": 1.0,
+      "answer_relevancy_mean": 0.86,
+      "geval_mean": 0.36,
+      "latency_p50_ms": 100594.11,
+      "latency_p95_ms": 154140.83,
+      "errors": {
+        "total": 0,
+        "rate": 0.0,
+        "types": {}
+      }
+    },
+    "gemma4:e4b": {
+      "total_cases": 5,
+      "success_rate": 1.0,
+      "answer_relevancy_mean": 0.82,
+      "geval_mean": 0.46,
+      "latency_p50_ms": 36927.29,
+      "latency_p95_ms": 41506.36,
+      "errors": {
+        "total": 0,
+        "rate": 0.0,
+        "types": {}
+      }
+    }
+  },
+  "winner": "ministral-3:8b",
+  "raw_results": [
+    {
+      "model": "ministral-3:8b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.8,
+      "latency_ms": 17544.59,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "ministral-3:8b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "answer_relevancy_score": 0.8333333333333334,
+      "geval_score": 0.8,
+      "latency_ms": 17251.21,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "ministral-3:8b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.7,
+      "latency_ms": 16903.72,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "ministral-3:8b",
+      "case_id": "email_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.0,
+      "latency_ms": 2.93,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "ministral-3:8b",
+      "case_id": "chat_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 0.5,
+      "geval_score": 0.0,
+      "latency_ms": 2.04,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3:8b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 0.7777777777777778,
+      "geval_score": 0.2,
+      "latency_ms": 9355.19,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3:8b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "answer_relevancy_score": 0.625,
+      "geval_score": 0.2,
+      "latency_ms": 9637.54,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "llama3:8b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.2,
+      "latency_ms": 9051.8,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "llama3:8b",
+      "case_id": "email_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.0,
+      "latency_ms": 3.89,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "llama3:8b",
+      "case_id": "chat_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 0.5,
+      "geval_score": 0.0,
+      "latency_ms": 2.05,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3.5:9b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.6,
+      "latency_ms": 100594.11,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3.5:9b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "answer_relevancy_score": 0.8,
+      "geval_score": 0.6,
+      "latency_ms": 101028.6,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "qwen3.5:9b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.6,
+      "latency_ms": 154140.83,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "qwen3.5:9b",
+      "case_id": "email_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.0,
+      "latency_ms": 2.84,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "qwen3.5:9b",
+      "case_id": "chat_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 0.5,
+      "geval_score": 0.0,
+      "latency_ms": 2.15,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "case_id": "email_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.8,
+      "latency_ms": 37274.82,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "case_id": "email_ok_002",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.8,
+      "latency_ms": 41506.36,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "email"
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "case_id": "chat_ok_001",
+      "ok": true,
+      "answer_relevancy_score": 0.6,
+      "geval_score": 0.7,
+      "latency_ms": 36927.29,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "happy_path",
+        "chat"
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "case_id": "email_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 1.0,
+      "geval_score": 0.0,
+      "latency_ms": 3.33,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "case_id": "chat_invalid_001",
+      "ok": true,
+      "answer_relevancy_score": 0.5,
+      "geval_score": 0.0,
+      "latency_ms": 2.47,
+      "error_type": "",
+      "error": "None",
+      "tags": [
+        "invalid_input"
+      ]
+    }
+  ]
+}

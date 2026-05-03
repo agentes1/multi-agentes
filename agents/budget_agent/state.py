@@ -11,6 +11,8 @@ class BudgetState(TypedDict, total=False):
     # ticket crudo recibido desde Odoo/Discuss; el agente de presupuestos lo normaliza
     ticket: dict[str, Any]
     ticket_text: str
+    ticket_block: str
+    source_text: str
     source_ticket_id: int
     # json normalizado por el propio budget_agent; se mantiene como entrada opcional para tests/herramientas
     normalized_request: dict[str, Any]

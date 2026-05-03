@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from odoo.mcp_client import OdooMCPClient
+from shared.config import MODEL_INTAKE_AGENT
 from shared.llm import get_llm
 
 
@@ -14,6 +15,6 @@ class IntakeDependencies:
 def build_dependencies(model: str | None = None) -> IntakeDependencies:
     """Construye las dependencias del agente."""
     return IntakeDependencies(
-        llm=get_llm(model=model),
+        llm=get_llm(model=model or MODEL_INTAKE_AGENT),
         odoo_mcp_client=OdooMCPClient(),
     )

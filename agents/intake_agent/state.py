@@ -28,5 +28,7 @@ class IntakeState(TypedDict, total=False):
     final_text: str
     # warnings, faltan datos importantes en el ticket
     warnings: list[str]
+    # canal de origen normalizado (email, chat, etc)
+    source_channel: str
     # error producido en el flujo, None o ausencia si no hay error
     error: str | None

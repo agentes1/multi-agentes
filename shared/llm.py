@@ -16,7 +16,7 @@ def get_llm(model: str | None = None, temperature: int | None = None) -> ChatOll
     selected_temperature = (
         temperature
         if temperature is not None
-        else int(_clean_env(os.getenv("OLLAMA_TEMPERATURE_OVERRIDE")) or str(OLLAMA_TEMPERATURE))
+        else float(os.getenv("OLLAMA_TEMPERATURE_OVERRIDE", str(OLLAMA_TEMPERATURE)))
     )
 
     return ChatOllama(
