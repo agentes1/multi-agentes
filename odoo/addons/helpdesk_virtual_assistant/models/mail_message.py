@@ -83,31 +83,45 @@ class MailMessage(models.Model):
         payload = {
             "ticket_id": ticket.id if ticket else None,
             "ticket_title": ticket.name if ticket else "",
+            "ticket_description": ticket.description or "" if ticket else "",
+            "ticket_partner_name": self._get_related_name(ticket, "partner_id"),
+            "ticket_partner_email": ticket.partner_id.email if ticket and ticket.partner_id else "",
+            "ticket_team": self._get_related_name(ticket, "team_id"),
+            "ticket_category": self._get_related_name(ticket, "category_id"),
+            "ticket_type": self._get_related_name(ticket, "type_id"),
+            "ticket_stage": self._get_related_name(ticket, "stage_id"),
             "channel_id": channel.id,
             "channel_name": channel.name or "",
             "message_id": self.id,
             "author_name": self.author_id.name if self.author_id else "",
             "author_email": self.author_id.email if self.author_id else "",
             "body": body_text,
+            "recent_messages": self._get_recent_channel_messages(channel),
             "thread_id": f"odoo-discuss-{channel.id}",
         }
 
-        reply_text = self._fetch_virtual_assistant_followup(payload)
-        if not reply_text:
-            _logger.info("Assistant backend returned no follow-up text for discuss message %s", self.id)
+        backend_result = self._fetch_virtual_assistant_followup(payload)
+        reply_text = str(backend_result.get("reply_text", "")).strip()
+        actions = backend_result.get("actions", []) or []
+        if not reply_text and not actions:
+            _logger.info("Assistant backend returned no follow-up work for discuss message %s", self.id)
             return
 
-        _logger.info(
-            "Posting assistant follow-up to channel %s for discuss message %s using route backend",
-            channel.id,
-            self.id,
-        )
-        channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
-            body=reply_text,
-            author_id=assistant_user.partner_id.id,
-            message_type="comment",
-            subtype_xmlid="mail.mt_comment",
-        )
+        if reply_text:
+            _logger.info(
+                "Posting assistant follow-up to channel %s for discuss message %s using route backend",
+                channel.id,
+                self.id,
+            )
+            channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
+                body=reply_text,
+                author_id=assistant_user.partner_id.id,
+                message_type="comment",
+                subtype_xmlid="mail.mt_comment",
+            )
+
+        if actions:
+            self._apply_virtual_assistant_actions(actions, ticket)
 
     def _get_virtual_assistant_channel(self):
         self.ensure_one()
@@ -129,6 +143,37 @@ class MailMessage(models.Model):
         plain_body = re.sub(r"<[^>]+>", " ", body)
         plain_body = re.sub(r"\s+", " ", plain_body).strip()
         return plain_body
+
+    def _get_recent_channel_messages(self, channel, limit=8):
+        self.ensure_one()
+        messages = self.env["mail.message"].sudo().search(
+            [
+                ("model", "in", ["discuss.channel", "mail.channel"]),
+                ("res_id", "=", channel.id),
+                ("message_type", "=", "comment"),
+            ],
+            order="id desc",
+            limit=limit,
+        )
+        result = []
+        for message in reversed(messages):
+            result.append(
+                {
+                    "id": message.id,
+                    "author_name": message.author_id.name if message.author_id else "",
+                    "author_email": message.author_id.email if message.author_id else "",
+                    "body": message._extract_plain_body(),
+                    "date": str(message.date or ""),
+                }
+            )
+        return result
+
+    @staticmethod
+    def _get_related_name(record, field_name):
+        if not record or field_name not in record._fields:
+            return ""
+        related = record[field_name]
+        return related.name if related else ""
 
     @staticmethod
     def _extract_ticket_id_from_channel_name(channel_name):
@@ -157,9 +202,16 @@ class MailMessage(models.Model):
             with urlopen(request, timeout=60) as response:
                 raw_body = response.read().decode("utf-8")
             parsed = json.loads(raw_body)
+            if not isinstance(parsed, dict):
+                _logger.warning(
+                    "Assistant backend returned an unexpected response for discuss message %s.",
+                    self.id,
+                )
+                return {}
             reply_text = str(parsed.get("reply_text", "")).strip()
-            if reply_text:
-                return reply_text
+            actions = parsed.get("actions", []) or []
+            if reply_text or actions:
+                return parsed
             _logger.warning(
                 "Assistant backend returned no reply_text for discuss message %s.",
                 self.id,
@@ -182,4 +234,44 @@ class MailMessage(models.Model):
                 self.id,
             )
 
-        return ""
+        return {}
+
+    def _apply_virtual_assistant_actions(self, actions, ticket):
+        self.ensure_one()
+        if not isinstance(actions, list):
+            _logger.warning("Ignoring malformed assistant actions for discuss message %s: %s", self.id, actions)
+            return
+
+        for action in actions:
+            if not isinstance(action, dict):
+                _logger.warning("Ignoring malformed assistant action for discuss message %s: %s", self.id, action)
+                continue
+
+            action_type = action.get("type")
+            if action_type != "mark_ticket_ready":
+                _logger.info("Ignoring unsupported assistant action for discuss message %s: %s", self.id, action_type)
+                continue
+
+            action_ticket = ticket if ticket and ticket.exists() else False
+            try:
+                action_ticket_id = int(action.get("ticket_id") or 0)
+            except (TypeError, ValueError):
+                action_ticket_id = 0
+            if action_ticket and action_ticket_id and int(action_ticket_id) != action_ticket.id:
+                _logger.warning(
+                    "Ignoring mark_ticket_ready for ticket %s from channel ticket %s",
+                    action_ticket_id,
+                    action_ticket.id,
+                )
+                continue
+            if not action_ticket and action_ticket_id:
+                action_ticket = self.env["helpdesk.ticket"].sudo().browse(int(action_ticket_id))
+            if not action_ticket or not action_ticket.exists():
+                _logger.warning("Cannot apply mark_ticket_ready because ticket was not found: %s", action_ticket_id)
+                continue
+            if action_ticket.kanban_state == "done":
+                _logger.info("Ticket %s is already Ready for next stage", action_ticket.id)
+                continue
+
+            _logger.info("Marking ticket %s as Ready for next stage from assistant chat confirmation", action_ticket.id)
+            action_ticket.sudo().write({"kanban_state": "done"})

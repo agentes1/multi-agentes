@@ -1,227 +1,101 @@
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 
-from agents.budget_agent.dependencies import BudgetDependencies
-from agents.budget_agent.tools import BudgetAgentTools
-from agents.general_agent.service import GENERAL_AGENT_NAME, GENERAL_AGENT_RESPONSE
+from agents.assistant_chat_agent.service import ASSISTANT_CHAT_AGENT_NAME
 import api
 from orchestration.assistant_discuss import DiscussMessageOrchestrator
 
 
-class FakeBudgetOdooWrapper:
-    def __init__(self):
-        self.create_sale_order_called = False
+class FakeChatAgent:
+    calls: list[dict] = []
 
-    def list_catalog(self):
-        return {
-            "CRM": {"id": 11, "name": "CRM", "default_code": "CRM"},
-            "AUTO": {
-                "id": 22,
-                "name": "Automatizacion Comercial",
-                "default_code": "AUTO",
-            },
-        }
-
-    def find_sale_order_by_client_ref(self, client_order_ref):
-        return None
-
-    def get_or_create_contact(self, company_name):
-        return 501
-
-    def create_sale_order(self, partner_id, client_order_ref=None):
-        self.create_sale_order_called = True
-        return 701
-
-    def create_sale_order_line(self, order_id, product_id, quantity=1):
-        return 1
-
-    def get_sale_order(self, order_id):
-        return {"id": order_id, "amount_untaxed": 3000.0, "amount_total": 3000.0}
-
-    def get_sale_order_lines(self, order_id):
-        return [
-            {
-                "name": "CRM",
-                "product_uom_qty": 1,
-                "price_unit": 1200.0,
-                "price_subtotal": 1200.0,
-                "default_code": "CRM",
-            },
-            {
-                "name": "Automatizacion Comercial",
-                "product_uom_qty": 1,
-                "price_unit": 1800.0,
-                "price_subtotal": 1800.0,
-                "default_code": "AUTO",
-            },
-        ]
+    async def areply(self, payload: dict, route_name: str) -> str:
+        self.calls.append({"payload": payload, "route_name": route_name})
+        if route_name == "budget":
+            return "Puedo ayudarte a concretar el presupuesto. Para avanzar, dime usuarios, modulos y plazo."
+        if route_name == "budget_confirmed":
+            return "Perfecto, marco el ticket como listo para que se genere el presupuesto."
+        if route_name == "issue":
+            return "Revisemos la incidencia. Indica el error exacto, pasos para reproducirlo y usuario afectado."
+        return "Cuéntame un poco más para poder orientar el ticket correctamente."
 
 
-class FakeOdooMCPClient:
-    def __init__(self, wrapper: FakeBudgetOdooWrapper):
-        self.wrapper = wrapper
-
-    def list_catalog(self):
-        return self.wrapper.list_catalog()
-
-    def get_or_create_contact(self, company_name: str):
-        return self.wrapper.get_or_create_contact(company_name)
-
-    def find_sale_order_by_client_ref(self, client_order_ref: str):
-        return self.wrapper.find_sale_order_by_client_ref(client_order_ref)
-
-    def create_sale_order(self, partner_id: int, client_order_ref: str | None = None):
-        return self.wrapper.create_sale_order(partner_id, client_order_ref=client_order_ref)
-
-    def create_sale_order_line(self, order_id: int, product_id: int, quantity: int = 1):
-        return self.wrapper.create_sale_order_line(order_id, product_id, quantity=quantity)
-
-    def get_sale_order(self, order_id: int):
-        return self.wrapper.get_sale_order(order_id)
-
-    def get_sale_order_lines(self, order_id: int):
-        return self.wrapper.get_sale_order_lines(order_id)
-
-    def get_product(self, product_id: int):
-        return None
-
-    def get_customer_profile(self, company_name: str):
-        return {"segment": "pyme", "known_customer": True, "email": "alejandro@empresa.com"}
-
-    def get_product_catalog_snapshot(self, product_ids: list[int]):
-        return [
-            {
-                "id": 11,
-                "name": "CRM",
-                "default_code": "CRM",
-                "price": 1200.0,
-                "description": "Gestion comercial base.",
-            },
-            {
-                "id": 22,
-                "name": "Automatizacion Comercial",
-                "default_code": "AUTO",
-                "price": 1800.0,
-                "description": "Automatizaciones para ventas.",
-            },
-        ]
-
-    def find_related_products(self, product_ids: list[int], limit: int = 3):
-        return [
-            {
-                "id": 31,
-                "name": "Helpdesk y Soporte",
-                "default_code": "HELP",
-                "price": 950.0,
-            }
-        ][:limit]
-
-
-class FakeBudgetLLM:
-    async def ainvoke(self, messages):
-        prompt = messages[-1].content
-        if "Devuelve solo JSON" in prompt:
-            if "product_ids" in prompt:
-                return AIMessage(
-                    content='{"product_ids": [11, 22], "unmatched_requirements": []}'
-                )
-            return AIMessage(
-                content=(
-                    '{"company_name": "Alejandro", '
-                    '"project_summary": "Solicitud presupuesto CRM", '
-                    '"requirements": ["crm", "automatizacion comercial"]}'
-                )
-            )
-        return AIMessage(
-            content=(
-                "Hola Alejandro,\n\n"
-                "He preparado un presupuesto inicial con los servicios detectados.\n"
-                "Referencia del presupuesto: 701\n"
-                "Importe total estimado: 3000.0 EUR\n"
-                "Servicios incluidos: CRM, Automatizacion Comercial\n\n"
-                f"Contexto usado: {prompt}"
-            )
-        )
-
-
-def _build_budget_deps(wrapper: FakeBudgetOdooWrapper):
-    def _builder(model: str | None = None) -> BudgetDependencies:
-        return BudgetDependencies(
-            llm=FakeBudgetLLM(),
-            odoo_wrapper=wrapper,
-            tools=BudgetAgentTools(mcp_client=FakeOdooMCPClient(wrapper)),
-        )
-
-    return _builder
+def _build_orchestrator() -> DiscussMessageOrchestrator:
+    FakeChatAgent.calls = []
+    return DiscussMessageOrchestrator(chat_agent_builder=FakeChatAgent)
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_routes_budget_and_returns_reply() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator()
+async def test_discuss_message_routes_budget_and_uses_chat_agent() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
             "ticket_id": 200,
             "ticket_title": "Solicitud inicial",
+            "ticket_description": "Cliente interesado en CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
             "channel_id": 5,
             "channel_name": "Ticket 200 - Asistente Virtual",
             "message_id": 10,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
             "body": "Hola, necesito presupuesto para CRM y automatizacion comercial en Odoo.",
+            "recent_messages": [
+                {"author_name": "Asistente Virtual", "body": "Hola, he recibido tu ticket."},
+                {"author_name": "Alejandro", "body": "Necesito presupuesto para CRM."},
+            ],
         },
         thread_id="discuss-budget",
     )
 
     assert result["ok"] is True
     assert result["route_name"] == "budget"
-    assert result["agent_name"] is None
-    assert "Ready for next stage" in result["reply_text"]
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "usuarios, modulos y plazo" in result["reply_text"]
     assert result["quote_summary"] == {}
-    assert budget_wrapper.create_sale_order_called is False
+    assert FakeChatAgent.calls[0]["route_name"] == "budget"
+    assert FakeChatAgent.calls[0]["payload"]["ticket_team"] == "Presupuestos"
+    assert FakeChatAgent.calls[0]["payload"]["recent_messages"][0]["author_name"] == "Asistente Virtual"
     assert result["trace"] == [
         "discuss_message_received",
         "route_decided:budget",
-        "budget_waiting_ready_state",
+        "agent_completed:assistant_chat_agent",
     ]
+    assert result["actions"] == []
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_routes_discard_and_returns_fixed_reply() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator()
+async def test_discuss_message_routes_issue_and_uses_chat_agent() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
             "ticket_id": 201,
-            "ticket_title": "Consulta",
+            "ticket_title": "Error en facturacion",
+            "ticket_team": "Soporte cliente",
+            "ticket_stage": "New",
             "channel_id": 6,
             "channel_name": "Ticket 201 - Asistente Virtual",
             "message_id": 11,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
-            "body": "Buenos dias, que tiempo hace hoy?",
+            "body": "Me aparece un error al guardar una factura.",
         }
     )
 
     assert result["ok"] is True
-    assert result["route_name"] == "discard"
-    assert result["agent_name"] == GENERAL_AGENT_NAME
-    assert result["reply_text"] == GENERAL_AGENT_RESPONSE
-    assert budget_wrapper.create_sale_order_called is False
-    assert result["trace"] == [
-        "discuss_message_received",
-        "route_decided:discard",
-        "agent_completed:general_agent",
-    ]
+    assert result["route_name"] == "issue"
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "pasos para reproducirlo" in result["reply_text"]
+    assert FakeChatAgent.calls[0]["route_name"] == "issue"
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_ignores_budget_ticket_title_when_message_is_general() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator()
+async def test_discuss_message_routes_discard_but_still_uses_chat_agent() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
@@ -238,14 +112,96 @@ async def test_discuss_message_ignores_budget_ticket_title_when_message_is_gener
 
     assert result["ok"] is True
     assert result["route_name"] == "discard"
-    assert result["agent_name"] == GENERAL_AGENT_NAME
-    assert result["reply_text"] == GENERAL_AGENT_RESPONSE
-    assert budget_wrapper.create_sale_order_called is False
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "orientar el ticket" in result["reply_text"]
+    assert FakeChatAgent.calls[0]["route_name"] == "discard"
+    assert result["actions"] == []
 
 
-def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator()
+@pytest.mark.asyncio
+async def test_discuss_message_marks_budget_ticket_ready_when_user_confirms_creation() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 204,
+            "ticket_title": "Presupuesto CRM",
+            "ticket_description": "Cliente interesado en CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
+            "channel_id": 9,
+            "channel_name": "Ticket 204 - Asistente Virtual",
+            "message_id": 14,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "Si.",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": "Tengo los datos principales. Quieres que preparemos el presupuesto?",
+                },
+                {"author_name": "Alejandro", "body": "Si."},
+            ],
+        },
+        thread_id="discuss-budget-confirmed",
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "budget"
+    assert result["reply_text"] == "Perfecto, marco el ticket como listo para que se genere el presupuesto."
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 204}]
+    assert FakeChatAgent.calls[0]["route_name"] == "budget_confirmed"
+    assert result["trace"] == [
+        "discuss_message_received",
+        "route_decided:discard",
+        "budget_creation_confirmed",
+        "agent_completed:assistant_chat_agent",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_marks_budget_ticket_ready_after_confirmation_prompt() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 205,
+            "ticket_title": "Presupuesto!!!!!",
+            "ticket_description": "Necesita un presupuesto CRM para mañana.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
+            "channel_id": 10,
+            "channel_name": "Ticket 205 - Asistente Virtual",
+            "message_id": 15,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "Sí",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": (
+                        "Entiendo que necesitas un presupuesto CRM para mañana. "
+                        "¿Podrías confirmar si es correcto? Si es así, marcaré tu solicitud "
+                        "como 'Ready for next stage' y crearé el presupuesto correspondiente."
+                    ),
+                },
+                {"author_name": "Alejandro", "body": "Sí"},
+            ],
+        },
+        thread_id="discuss-budget-confirmed",
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "budget"
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 205}]
+    assert FakeChatAgent.calls[0]["route_name"] == "budget_confirmed"
+    assert "budget_creation_confirmed" in result["trace"]
+
+
+def test_assistant_discuss_message_api_accepts_ticket_context_and_history(monkeypatch) -> None:
+    orchestrator = _build_orchestrator()
     monkeypatch.setattr(api, "build_discuss_message_orchestrator", lambda: orchestrator)
 
     client = TestClient(api.app)
@@ -254,12 +210,20 @@ def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None
         json={
             "ticket_id": 202,
             "ticket_title": "Solicitud inicial",
+            "ticket_description": "Necesita valorar CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_partner_email": "cliente@acme.com",
+            "ticket_team": "Presupuestos",
+            "ticket_category": "Consulta presupuesto",
+            "ticket_type": "Presupuesto",
+            "ticket_stage": "New",
             "channel_id": 7,
             "channel_name": "Ticket 202 - Asistente Virtual",
             "message_id": 12,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
             "body": "Necesito presupuesto para CRM.",
+            "recent_messages": [{"author_name": "Alejandro", "body": "Necesito presupuesto para CRM."}],
             "thread_id": "discuss-api",
         },
     )
@@ -268,5 +232,7 @@ def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None
     payload = response.json()
     assert payload["ok"] is True
     assert payload["route_name"] == "budget"
-    assert payload["agent_name"] is None
-    assert "Ready for next stage" in payload["reply_text"]
+    assert payload["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "usuarios, modulos y plazo" in payload["reply_text"]
+    assert payload["actions"] == []
+    assert FakeChatAgent.calls[0]["payload"]["ticket_partner_name"] == "ACME"

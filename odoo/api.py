@@ -1,109 +1,123 @@
+import time
 import xmlrpc.client
-from xmlrpc.client import Fault
-from sys import stderr
-from typing import Any 
 from enum import StrEnum
+from sys import stderr
+from typing import Any
+from xmlrpc.client import Fault
 
 
 class Table(StrEnum):
-    Product = 'product.product'
-    Contact = 'res.partner'
-    User = 'res.users'
-    Ticket = 'helpdesk.ticket'
-    TicketType = 'helpdesk.ticket.type'
-    TicketTeam = 'helpdesk.ticket.team'
-    TicketCategory = 'helpdesk.ticket.category'
-    TicketStage = 'helpdesk.ticket.stage'
-    TicketTag = 'helpdesk.ticket.tag'
-    Order = 'sale.order'
-    OrderLine = 'sale.order.line'
-    SystemParameter = 'ir.config_parameter'
+    Product = "product.product"
+    Contact = "res.partner"
+    User = "res.users"
+    Ticket = "helpdesk.ticket"
+    TicketType = "helpdesk.ticket.type"
+    TicketTeam = "helpdesk.ticket.team"
+    TicketCategory = "helpdesk.ticket.category"
+    TicketStage = "helpdesk.ticket.stage"
+    TicketTag = "helpdesk.ticket.tag"
+    HelpdeskTeam = "helpdesk.ticket.team"
+    Order = "sale.order"
+    OrderLine = "sale.order.line"
+    SystemParameter = "ir.config_parameter"
 
 
 class OdooAPI:
-    def __init__(self, url, username, password, db):
-        self._url = url 
-        self._username = username
-        self._password = password
-        self._db = db
+    """Cliente mínimo para trabajar con Odoo mediante XML-RPC."""
+
+    def __init__(
+        self,
+        url: str,
+        username: str,
+        password: str,
+        db: str,
+        login_retries: int = 12,
+        login_retry_delay: float = 2.0,
+    ):
+        self._url = self._normalize_url(url)
+        self._username, self._password, self._db = username, password, db
+        self._login_retries = login_retries
+        self._login_retry_delay = login_retry_delay
         self._uid = self._login()
-        self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
+        self._models = xmlrpc.client.ServerProxy(f"{self._url}/xmlrpc/2/object")
 
-    def _login(self):
-        common = xmlrpc.client.ServerProxy(f'{self._url}/common')
-        uid = common.authenticate(self._db, self._username, self._password, {})
-        if not uid: raise RuntimeError('URL was correct, but credentials were wrong, don\'t give up ur close!')
-        return uid
+    def _normalize_url(self, url: str) -> str:
+        """Normaliza la URL base de Odoo."""
+        return (url or "").rstrip("/").removesuffix("/xmlrpc/2")
 
-    # https://www.odoo.com/documentation/18.0/developer/reference/external_api.html#read-records
-    def _query(self, model, method, args = None, kwargs = None):
-        args = args or []
-        kwargs = kwargs or {}
-        return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args, kwargs)
+    def _login(self) -> int:
+        """Autentica el usuario y devuelve su UID."""
+        common = xmlrpc.client.ServerProxy(f"{self._url}/xmlrpc/2/common")
+        last_error: Exception | None = None
+        for attempt in range(1, self._login_retries + 1):
+            try:
+                uid = common.authenticate(self._db, self._username, self._password, {})
+                if not uid:
+                    raise RuntimeError("Credenciales incorrectas para Odoo.")
+                return uid
+            except RuntimeError:
+                raise
+            except Exception as error:
+                last_error = error
+                if attempt == self._login_retries:
+                    break
+                print(
+                    f"Odoo XML-RPC login failed on attempt {attempt}/{self._login_retries}: {error}. Retrying...",
+                    file=stderr,
+                )
+                time.sleep(self._login_retry_delay)
 
-    def get_dbs(self):
-        try:
-            client = xmlrpc.client.ServerProxy(f'{self._url}/db')
-            return client.list()
-        except Exception as e:
-            print("Could not list DBs:", e)
+        raise RuntimeError(
+            f"No se pudo conectar con Odoo en {self._url} tras {self._login_retries} intentos."
+        ) from last_error
 
-    def install(self, module: str) -> bool: 
-        ids = self._query('ir.module.module', 'search', [[('name', '=', str(module))]])
-        res = self._query('ir.module.module', 'button_immediate_install', [ids])
-        return True if res else False
-    
-    def update_module_list(self):
-        return self._query('ir.module.module', 'update_list', [])
+    def _query(self, model: Table | str, method: str, args: list | None = None, kwargs: dict | None = None) -> Any:
+        """Ejecuta un método ORM de Odoo."""
+        return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args or [], kwargs or {})
 
-    def get_all(self, table: Table, fields: list[str] = [], limit=1000) -> list[dict] | None:
-        results = self._query(table, 'search_read', [], { 'fields': fields, 'limit': limit })
-        return results if results else None
+    def search_read(self, table: Table, domain: list, fields: list[str] | None = None, limit: int = 1000) -> list[dict] | None:
+        """Busca registros y devuelve sus campos."""
+        results = self._query(table, "search_read", [domain], {"fields": fields or [], "limit": limit})
+        return results or None
 
-    def get_by_id(self, table: Table, ids: list[int], fields: list[str] = []) -> list[dict] | None:
-        results = self._query(table, 'read', [ids], { 'fields': fields })
-        return results if results else None
+    def get_all(self, table: Table, fields: list[str] | None = None, limit: int = 1000) -> list[dict] | None:
+        """Devuelve registros de una tabla."""
+        return self.search_read(table, [], fields, limit)
 
+    def get_by_id(self, table: Table, ids: list[int], fields: list[str] | None = None) -> list[dict] | None:
+        """Lee registros por ID."""
+        results = self._query(table, "read", [ids], {"fields": fields or []})
+        return results or None
 
-    def get_by_value(self, 
-            table: Table, 
-            criteria: dict[str, Any], 
-            fields: list[str] = [], 
-            exact: bool = False, 
-            OR: bool = False, 
-            limit=1000
-        ) -> list[dict] | None:
+    def get_by_value(
+        self, table: Table, criteria: dict[str, Any], fields: list[str] | None = None,
+        exact: bool = False, OR: bool = False, limit: int = 1000,
+    ) -> list[dict] | None:
+        """Busca registros por uno o varios campos."""
+        operator = "=" if exact else "ilike"
+        domain = [(field, operator, value) for field, value in criteria.items()]
+        if OR and len(domain) > 1: domain = ["|"] * (len(domain) - 1) + domain
+        return self.search_read(table, domain, fields, limit)
 
-        if exact: domain = [(f, '=', v) for f,v in criteria.items()]
-        else: domain = [(f, 'ilike', v) for f,v in criteria.items()]
+    def create(self, table: Table, rows: list[dict], context: dict[str, Any] | None = None) -> list[int] | None:
+        """Crea registros y devuelve sus IDs."""
+        ids = self._query(table, "create", [rows], {"context": context} if context else None)
+        return ids or None
 
-        if OR and len(domain) > 1:
-            for _ in range(len(domain) - 1):
-                domain.insert(0, '|')
+    def update(self, table: Table, ids: list[int], values: dict) -> bool:
+        """Actualiza registros."""
+        return bool(self._query(table, "write", [ids, values]))
 
-        results = self._query(table, 'search_read', [domain], { 'fields': fields, 'limit': limit })
-        return results if results else None
-
-
-    def update(self, table: Table, ids: list[int], new_data: dict):
-        res = self._query(table, 'write', [ids, new_data])
-        return res if res else None
-
-    def create(self, table: Table, rows: list[dict]) -> list[int] | None:
-        ids = self._query(table, 'create', [rows])
-        return ids if ids else None
-
-    def delete(self, table: Table, ids: list[int]):
-        try: return self._query(table, 'unlink', [ids])
-        except Fault as f: print(f.faultString, file=stderr)
-        return False
+    def delete(self, table: Table, ids: list[int]) -> bool:
+        """Elimina registros."""
+        try: return bool(self._query(table, "unlink", [ids]))
+        except Fault as fault:
+            print(fault.faultString, file=stderr)
+            return False
 
     def archive(self, table: Table, ids: list[int]) -> bool:
-        try: return self._query(table, 'write', [ids, {'active': False}]) # unactive rows aren't shown in the UI
-        except Fault as f: print(f.faultString, file=stderr)
-        return False
-
-    def unarchive(self, table: Table, ids: list[int]) -> bool:
-        try: return self._query(table, 'write', [ids, {'active': True}]) 
-        except Fault as f: print(f.faultString, file=stderr)
-        return False
+        """Archiva registros usando active=False."""
+        try: return bool(self._query(table, "write", [ids, {"active": False}]))
+        except Fault as fault:
+            print(fault.faultString, file=stderr)
+            return False
