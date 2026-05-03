@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from agents.budget_agent.dependencies import BudgetDependencies
@@ -9,7 +10,7 @@ from agents.budget_agent.graph import build_budget_graph
 
 @dataclass(frozen=True)
 class BudgetFromTicketOrchestrator:
-    budget_deps_builder: callable
+    budget_deps_builder: Callable
 
     async def handle_budget_from_ticket(
         self,

@@ -7,7 +7,7 @@ requires-python = ">=3.13,<3.14"
 
 # ── Configuración de setuptools ─────────────────────────────────────
 [tool.setuptools.packages.find]
-include = ["agents*", "routing*", "shared*", "services*", "schemas*"]
+include = ["agents*", "odoo*", "orchestration*", "routing*", "shared*", "services*", "schemas*"]
 
 
 # ── Ruff: linter y formateador ────────────────────────────────────────────────

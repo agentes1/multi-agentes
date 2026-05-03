@@ -1,7 +1,8 @@
+import time
 import xmlrpc.client
 from xmlrpc.client import Fault
 from sys import stderr
-from typing import Any 
+from typing import Any
 from enum import StrEnum
 
 
@@ -22,21 +23,39 @@ class Table(StrEnum):
 
 class OdooAPI:
     def __init__(self, url, username, password, db):
-        self._url = url 
+        self._url = url
         self._username = username
         self._password = password
         self._db = db
-        self._uid = self._login()
-        self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
+        self._uid: int | None = None
+        self._models: xmlrpc.client.ServerProxy | None = None
 
-    def _login(self):
+    def _ensure_connected(self, retries: int = 10, delay: float = 6.0) -> None:
+        if self._uid is not None:
+            return
+        last_exc: Exception = RuntimeError("Odoo not reachable")
+        for attempt in range(1, retries + 1):
+            try:
+                self._uid = self._login()
+                self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
+                return
+            except Exception as exc:
+                last_exc = exc
+                print(f"[OdooAPI] Odoo not ready (attempt {attempt}/{retries}): {exc}", file=stderr)
+                if attempt < retries:
+                    time.sleep(delay)
+        raise RuntimeError(f"Could not connect to Odoo after {retries} attempts") from last_exc
+
+    def _login(self) -> int:
         common = xmlrpc.client.ServerProxy(f'{self._url}/common')
         uid = common.authenticate(self._db, self._username, self._password, {})
-        if not uid: raise RuntimeError('URL was correct, but credentials were wrong, don\'t give up ur close!')
+        if not uid:
+            raise RuntimeError("URL was correct, but credentials were wrong, don't give up ur close!")
         return uid
 
     # https://www.odoo.com/documentation/18.0/developer/reference/external_api.html#read-records
-    def _query(self, model, method, args = None, kwargs = None):
+    def _query(self, model, method, args=None, kwargs=None):
+        self._ensure_connected()
         args = args or []
         kwargs = kwargs or {}
         return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args, kwargs)
