@@ -55,12 +55,20 @@ class AssistantDiscussMessageRequest(BaseModel):
     # Payload para continuar una conversación ya abierta en Discuss.
     ticket_id: int | None = None
     ticket_title: str = ""
+    ticket_description: str = ""
+    ticket_partner_name: str = ""
+    ticket_partner_email: str = ""
+    ticket_team: str = ""
+    ticket_category: str = ""
+    ticket_type: str = ""
+    ticket_stage: str = ""
     channel_id: int | None = None
     channel_name: str = ""
     message_id: int | None = None
     author_name: str = ""
     author_email: str = ""
     body: str = ""
+    recent_messages: list[dict] = Field(default_factory=list)
     thread_id: str | None = None
 
 
@@ -71,6 +79,7 @@ class AssistantDiscussMessageResponse(BaseModel):
     reply_text: str = ""
     normalized_request: dict = Field(default_factory=dict)
     quote_summary: dict = Field(default_factory=dict)
+    actions: list[dict] = Field(default_factory=list)
     error: str | None = None
     trace: list[str] = Field(default_factory=list)
 
@@ -151,12 +160,20 @@ async def assistant_discuss_message(request: AssistantDiscussMessageRequest):
     payload = {
         "ticket_id": request.ticket_id,
         "ticket_title": request.ticket_title,
+        "ticket_description": request.ticket_description,
+        "ticket_partner_name": request.ticket_partner_name,
+        "ticket_partner_email": request.ticket_partner_email,
+        "ticket_team": request.ticket_team,
+        "ticket_category": request.ticket_category,
+        "ticket_type": request.ticket_type,
+        "ticket_stage": request.ticket_stage,
         "channel_id": request.channel_id,
         "channel_name": request.channel_name,
         "message_id": request.message_id,
         "author_name": request.author_name,
         "author_email": request.author_email,
         "body": request.body,
+        "recent_messages": request.recent_messages,
     }
     result = await build_discuss_message_orchestrator().handle_discuss_message(
         payload=payload,

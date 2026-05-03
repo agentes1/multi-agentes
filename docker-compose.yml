@@ -5,10 +5,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      # Monta la caché de modelos del host para evitar descargas en redes con proxy SSL/TLS
-      # interceptor (antivirus, VPN corporativa). Los modelos deben estar ya descargados en el host.
-      # Usa HOME para funcionar en Windows, Linux y macOS.
-      - ${HOME}/.ollama:/root/.ollama
+      - ${HOME:-${USERPROFILE}}/.ollama:/root/.ollama
 
   ollama-init:
     image: curlimages/curl:latest
@@ -16,21 +13,25 @@ services:
     depends_on:
       - ollama
     env_file:
-      - ../.env
+      - ./shared/.env
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         MODEL=$${OLLAMA_MODEL:-qwen3:4b}
+
         until curl -sf http://ollama:11434/ > /dev/null 2>&1; do
-          echo "[ollama-init] Esperando al servidor Ollama..."; sleep 3;
+          echo "[ollama-init] Esperando al servidor Ollama..."
+          sleep 3
         done
+
         PRESENT=$(curl -sf http://ollama:11434/api/tags | grep -c "\"$${MODEL}\"" || true)
+
         if [ "$${PRESENT}" -gt 0 ]; then
-          echo "[ollama-init] Modelo $${MODEL} disponible. OK.";
+          echo "[ollama-init] Modelo $${MODEL} disponible. OK."
         else
-          echo "[ollama-init] ERROR: el modelo $${MODEL} no está en la caché montada (~/.ollama).";
-          echo "[ollama-init] Descárgalo primero en el host con: ollama pull $${MODEL}";
-          exit 1;
+          echo "[ollama-init] ERROR: el modelo $${MODEL} no está en la caché montada ~/.ollama."
+          echo "[ollama-init] Descárgalo primero en el host con: ollama pull $${MODEL}"
+          exit 1
         fi
     restart: "no"
 
@@ -49,22 +50,22 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ../.env
+      - ./shared/.env
     environment:
-      # Odoo XML-RPC — apunta al contenedor web interno
       URL: http://web:8069
       DB: ${ODOO_DB:-odoo}
       USERNAME: ${ODOO_USERNAME:-odoo}
       PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
-      ODOO_BASE_URL: http://web:8069/xmlrpc/2
+
+      ODOO_BASE_URL: http://web:8069
       ODOO_DB: ${ODOO_DB:-odoo}
       ODOO_USERNAME: ${ODOO_USERNAME:-odoo}
       ODOO_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
-      # Ollama — apunta al servicio interno del compose
+
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
       OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0}
-      # Modelo por agente — si no se define, usa OLLAMA_MODEL
+
       MODEL_INTAKE_AGENT: ${MODEL_INTAKE_AGENT:-}
       MODEL_BUDGET_AGENT: ${MODEL_BUDGET_AGENT:-}
       MODEL_GENERAL_AGENT: ${MODEL_GENERAL_AGENT:-}
@@ -86,6 +87,7 @@ services:
       HOST: db
       USER: odoo
       PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
+
       HELP_DESK_VIRTUAL_ASSISTANT_TICKET_ENTRY_URL: http://assistant-backend:8000/assistant/ticket-entry
       HELP_DESK_VIRTUAL_ASSISTANT_DISCUSS_MESSAGE_URL: http://assistant-backend:8000/assistant/discuss-message
       HELP_DESK_VIRTUAL_ASSISTANT_BUDGET_FROM_TICKET_URL: http://assistant-backend:8000/assistant/budget-from-ticket
@@ -96,8 +98,8 @@ services:
     container_name: odoo-db
     environment:
       POSTGRES_DB: postgres
-      POSTGRES_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
       POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - odoo-db-data:/var/lib/postgresql/data/pgdata
