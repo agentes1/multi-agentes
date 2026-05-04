@@ -52,12 +52,12 @@ services:
     env_file:
       - ./shared/.env
     environment:
-      URL: http://web:8069
+      URL: http://web:8069/xmlrpc/2
       DB: ${ODOO_DB:-odoo}
       USERNAME: ${ODOO_USERNAME:-odoo}
       PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
 
-      ODOO_BASE_URL: http://web:8069
+      ODOO_BASE_URL: http://web:8069/xmlrpc/2
       ODOO_DB: ${ODOO_DB:-odoo}
       ODOO_USERNAME: ${ODOO_USERNAME:-odoo}
       ODOO_PASSWORD: ${ODOO_PASSWORD:-multi-agente-agentes1}
