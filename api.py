@@ -10,9 +10,12 @@ Cada endpoint delega la lógica real en un orquestador de orchestration/,
 de modo que la API se mantenga como una capa fina de entrada/salida.
 """
 
+import traceback
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from orchestration.assistant_discuss import build_discuss_message_orchestrator
@@ -31,7 +34,6 @@ app.add_middleware(
 )
 
 class AssistantTicketEntryRequest(BaseModel):
-    # Payload que Odoo envía cuando ya existe un ticket y hay que enrutarlo.
     ticket_id: int | None = None
     title: str = ""
     description: str = ""
@@ -52,7 +54,6 @@ class AssistantTicketEntryResponse(BaseModel):
 
 
 class AssistantDiscussMessageRequest(BaseModel):
-    # Payload para continuar una conversación ya abierta en Discuss.
     ticket_id: int | None = None
     ticket_title: str = ""
     ticket_description: str = ""
@@ -85,7 +86,6 @@ class AssistantDiscussMessageResponse(BaseModel):
 
 
 class AssistantIncomingEmailRequest(BaseModel):
-    # Payload que llega desde mail_inbox_input antes de crear el ticket en Odoo.
     inbox_id: int | None = None
     subject: str = ""
     email_from: str = ""
@@ -135,99 +135,130 @@ class AssistantBudgetFromTicketResponse(BaseModel):
     trace: list[str] = Field(default_factory=list)
 
 
+# ─── Endpoints ────────────────────────────────────────────────────────────────
+
 @app.post("/assistant/ticket-entry", response_model=AssistantTicketEntryResponse)
 async def assistant_ticket_entry(request: AssistantTicketEntryRequest):
-    # Convierte el payload HTTP a un ticket simple y lo entrega al semantic router.
-    ticket = {
-        "id": request.ticket_id,
-        "name": request.title,
-        "description": request.description,
-        "partner_name": request.partner_name,
-        "partner_email": request.partner_email,
-    }
-    result = await build_ticket_entry_orchestrator().handle_ticket_entry(
-        ticket=ticket,
-        thread_id=request.thread_id,
-    )
-    if not result["ok"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+    try:
+        ticket = {
+            "id": request.ticket_id,
+            "name": request.title,
+            "description": request.description,
+            "partner_name": request.partner_name,
+            "partner_email": request.partner_email,
+        }
+        result = await build_ticket_entry_orchestrator().handle_ticket_entry(
+            ticket=ticket,
+            thread_id=request.thread_id,
+        )
+        if not result["ok"]:
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
 
 
 @app.post("/assistant/discuss-message", response_model=AssistantDiscussMessageResponse)
 async def assistant_discuss_message(request: AssistantDiscussMessageRequest):
-    # Reutiliza el mismo flujo de decisión de agentes, pero para mensajes de chat.
-    payload = {
-        "ticket_id": request.ticket_id,
-        "ticket_title": request.ticket_title,
-        "ticket_description": request.ticket_description,
-        "ticket_partner_name": request.ticket_partner_name,
-        "ticket_partner_email": request.ticket_partner_email,
-        "ticket_team": request.ticket_team,
-        "ticket_category": request.ticket_category,
-        "ticket_type": request.ticket_type,
-        "ticket_stage": request.ticket_stage,
-        "channel_id": request.channel_id,
-        "channel_name": request.channel_name,
-        "message_id": request.message_id,
-        "author_name": request.author_name,
-        "author_email": request.author_email,
-        "body": request.body,
-        "recent_messages": request.recent_messages,
-    }
-    result = await build_discuss_message_orchestrator().handle_discuss_message(
-        payload=payload,
-        thread_id=request.thread_id,
-    )
-    if not result["ok"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+    try:
+        payload = {
+            "ticket_id": request.ticket_id,
+            "ticket_title": request.ticket_title,
+            "ticket_description": request.ticket_description,
+            "ticket_partner_name": request.ticket_partner_name,
+            "ticket_partner_email": request.ticket_partner_email,
+            "ticket_team": request.ticket_team,
+            "ticket_category": request.ticket_category,
+            "ticket_type": request.ticket_type,
+            "ticket_stage": request.ticket_stage,
+            "channel_id": request.channel_id,
+            "channel_name": request.channel_name,
+            "message_id": request.message_id,
+            "author_name": request.author_name,
+            "author_email": request.author_email,
+            "body": request.body,
+            "recent_messages": request.recent_messages,
+        }
+        result = await build_discuss_message_orchestrator().handle_discuss_message(
+            payload=payload,
+            thread_id=request.thread_id,
+        )
+        if not result["ok"]:
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
 
 
 @app.post("/assistant/incoming-email", response_model=AssistantIncomingEmailResponse)
 async def assistant_incoming_email(request: AssistantIncomingEmailRequest):
-    # Entrada del flujo de correo: intake crea el ticket y luego Odoo continúa el resto.
-    payload = {
-        "inbox_id": request.inbox_id,
-        "subject": request.subject,
-        "email_from": request.email_from,
-        "email_to": request.email_to,
-        "email_cc": request.email_cc,
-        "body_html": request.body_html,
-        "body": request.body,
-        "message_id": request.message_id,
-        "sender_name": request.sender_name,
-        "received_date": request.received_date,
-    }
-    result = await build_incoming_email_orchestrator().handle_incoming_email(
-        payload=payload,
-        thread_id=request.thread_id,
-    )
-    if not result["ok"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+    try:
+        payload = {
+            "inbox_id": request.inbox_id,
+            "subject": request.subject,
+            "email_from": request.email_from,
+            "email_to": request.email_to,
+            "email_cc": request.email_cc,
+            "body_html": request.body_html,
+            "body": request.body,
+            "message_id": request.message_id,
+            "sender_name": request.sender_name,
+            "received_date": request.received_date,
+        }
+        result = await build_incoming_email_orchestrator().handle_incoming_email(
+            payload=payload,
+            thread_id=request.thread_id,
+        )
+        if not result["ok"]:
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
 
 
 @app.post("/assistant/budget-from-ticket", response_model=AssistantBudgetFromTicketResponse)
 async def assistant_budget_from_ticket(request: AssistantBudgetFromTicketRequest):
-    ticket = {
-        "id": request.ticket_id,
-        "name": request.title,
-        "description": request.description,
-        "partner_id": request.partner_id,
-        "partner_name": request.partner_name,
-        "partner_email": request.partner_email,
-    }
-    result = await build_budget_from_ticket_orchestrator().handle_budget_from_ticket(
-        ticket=ticket,
-        thread_id=request.thread_id or f"odoo-ticket-budget-{request.ticket_id}",
-    )
-    if not result["ok"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+    try:
+        ticket = {
+            "id": request.ticket_id,
+            "name": request.title,
+            "description": request.description,
+            "partner_id": request.partner_id,
+            "partner_name": request.partner_name,
+            "partner_email": request.partner_email,
+        }
+        result = await build_budget_from_ticket_orchestrator().handle_budget_from_ticket(
+            ticket=ticket,
+            thread_id=request.thread_id or f"odoo-ticket-budget-{request.ticket_id}",
+        )
+        if not result["ok"]:
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
 
 
-# endpoint de salud para comprobar que el servidor está vivo
+# ─── Frontend estático ────────────────────────────────────────────────────────
+
+@app.get("/")
+async def frontend():
+    return FileResponse("frontend.html")
+
+
+# ─── Health ───────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
