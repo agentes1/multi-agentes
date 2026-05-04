@@ -3,29 +3,42 @@ import os
 
 from dotenv import load_dotenv
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
 
-# En desarrollo local priorizamos el .env de la raiz si existe, pero
-# mantenemos compatibilidad con shared/.env porque Docker Compose del proyecto
-# lo usa como origen de variables para el backend.
+# Carga de entorno (primero .env raíz, luego shared/.env sin sobrescribir)
+ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 load_dotenv(ROOT_DIR / "shared" / ".env", override=False)
 
-#/CREDENCIALES MCP SERVER DE ODOO/
-URL = os.getenv("URL")
-DB = os.getenv("DB")
-USERNAME = os.getenv("USERNAME")
-PASSWORD = os.getenv("PASSWORD")
+def _env(name: str) -> str | None:
+    """Lee variable de entorno limpiando espacios y comillas."""
+    value = os.getenv(name)
+    return value.strip().strip("\"'") if value else None
 
-#/VARIABLES DE llm.py/
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
-OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
-ROUTER_EMBEDDINGS_ENABLED = os.getenv("ROUTER_EMBEDDINGS_ENABLED", "false")
-ROUTER_EMBED_MODEL = os.getenv("ROUTER_EMBED_MODEL")
 
-#/CREDEMCIALES ODOO/
-ODOO_BASE_URL = os.getenv("ODOO_BASE_URL")
-ODOO_DB = os.getenv("ODOO_DB")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
+# MCP Server (Odoo tools)
+URL = _env("URL")
+DB = _env("DB")
+USERNAME = _env("USERNAME")
+PASSWORD = _env("PASSWORD")
+
+# LLM (Ollama)
+OLLAMA_MODEL = _env("OLLAMA_MODEL")
+OLLAMA_TEMPERATURE = _env("OLLAMA_TEMPERATURE")
+OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL")
+ROUTER_EMBEDDINGS_ENABLED = _env("ROUTER_EMBEDDINGS_ENABLED") or "false"
+ROUTER_EMBED_MODEL = _env("ROUTER_EMBED_MODEL")
+
+# Odoo (ERP real)
+ODOO_BASE_URL = _env("ODOO_BASE_URL")
+ODOO_DB = _env("ODOO_DB")
+ODOO_USERNAME = _env("ODOO_USERNAME")
+ODOO_PASSWORD = _env("ODOO_PASSWORD")
+
+# Modelos por agente (con fallback al modelo base)
+OLLAMA_MODEL_OVERRIDE = _env("OLLAMA_MODEL_OVERRIDE") or OLLAMA_MODEL
+MODEL_BUDGET_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_INTAKE_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_DISCUSS_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_ENTRY_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_GENERAL_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_SALES_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL

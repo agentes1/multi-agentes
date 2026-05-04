@@ -31,7 +31,12 @@ def test_budget_route_detects_sales_and_commercial_automation_request() -> None:
     assert result.name == "budget"
 
 
-def test_support_incident_falls_back_to_discard_when_issue_route_is_unused() -> None:
+def test_sales_route_detects_commercial_process_request() -> None:
+    result = router("Queremos mejorar el pipeline comercial y el seguimiento de oportunidades.")
+    assert result.name == "sales"
+
+
+def test_support_incident_routes_to_discard() -> None:
     result = router("Tenemos un error en Odoo y no funciona la facturacion, necesitamos soporte.")
     assert result.name == "discard"
 

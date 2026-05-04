@@ -34,28 +34,12 @@ class FakeIntakeGraph:
         }
 
 
-class FakeTicketEntryOrchestrator:
-    async def handle_ticket_entry(self, ticket, thread_id=None, model=None):
-        return {
-            "ok": True,
-            "route_name": "budget",
-            "agent_name": "budget_agent",
-            "reply_text": (
-                f"He preparado una respuesta para el ticket {ticket['id']} "
-                f"del cliente {ticket.get('partner_email', '')}."
-            ),
-            "quote_summary": {"sale_order_id": 701},
-            "trace": ["ticket_received", "route_decided:budget", "agent_completed:budget_agent"],
-        }
-
-
 @pytest.mark.asyncio
 async def test_incoming_email_orchestrator_runs_intake_graph(monkeypatch):
     monkeypatch.setattr("orchestration.assistant_email.build_intake_graph", lambda: FakeIntakeGraph())
 
     orchestrator = IncomingEmailOrchestrator(
         intake_deps_builder=lambda: object(),
-        ticket_entry_orchestrator_builder=lambda: FakeTicketEntryOrchestrator(),
     )
     result = await orchestrator.handle_incoming_email(
         payload={
@@ -69,25 +53,22 @@ async def test_incoming_email_orchestrator_runs_intake_graph(monkeypatch):
 
     assert result["ok"] is True
     assert result["ticket_id"] == 321
-    assert result["route_name"] == "budget"
-    assert result["agent_name"] == "budget_agent"
-    assert "cliente@acme.com" in result["reply_text"]
+    assert result["route_name"] is None
+    assert result["agent_name"] is None
+    assert result["reply_text"] == ""
     assert result["normalized_request"]["ticket_type"] == "budget"
     assert result["ticket_payload"]["team_name"] == "Presupuestos"
     assert result["trace"] == [
         "incoming_email_received",
         "ticket_type_decided:budget",
         "ticket_created:321",
-        "ticket_received",
-        "route_decided:budget",
-        "agent_completed:budget_agent",
+        "email_reply_skipped",
     ]
 
 
 def test_incoming_email_api_returns_ticket_created(monkeypatch):
     orchestrator = IncomingEmailOrchestrator(
         intake_deps_builder=lambda: object(),
-        ticket_entry_orchestrator_builder=lambda: FakeTicketEntryOrchestrator(),
     )
     monkeypatch.setattr("orchestration.assistant_email.build_intake_graph", lambda: FakeIntakeGraph())
     monkeypatch.setattr(api, "build_incoming_email_orchestrator", lambda: orchestrator)
@@ -108,13 +89,12 @@ def test_incoming_email_api_returns_ticket_created(monkeypatch):
     payload = response.json()
     assert payload["ok"] is True
     assert payload["ticket_id"] == 321
-    assert payload["route_name"] == "budget"
-    assert payload["agent_name"] == "budget_agent"
+    assert payload["route_name"] is None
+    assert payload["agent_name"] is None
+    assert payload["reply_text"] == ""
     assert payload["trace"] == [
         "incoming_email_received",
         "ticket_type_decided:budget",
         "ticket_created:321",
-        "ticket_received",
-        "route_decided:budget",
-        "agent_completed:budget_agent",
+        "email_reply_skipped",
     ]

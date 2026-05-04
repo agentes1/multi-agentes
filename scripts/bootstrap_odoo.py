@@ -1,7 +1,8 @@
 import time
 import os
 
-from odoo.api_wrapper import OdooAPIWrapper
+# from odoo.api_wrapper import OdooAPIWrapper
+from odoo.api import OdooAPI, Table
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
 MODULES = [
@@ -142,124 +143,115 @@ ASSISTANT_USER = {
 SYSTEM_PARAMETERS = {
     "helpdesk_virtual_assistant.backend_ticket_entry_url": "http://assistant-backend:8000/assistant/ticket-entry",
     "helpdesk_virtual_assistant.backend_discuss_message_url": "http://assistant-backend:8000/assistant/discuss-message",
+    "helpdesk_virtual_assistant.backend_sales_from_ticket_url": "http://assistant-backend:8000/assistant/sales-from-ticket",
     "mail_inbox_input.backend_incoming_email_url": "http://assistant-backend:8000/assistant/incoming-email",
 }
 
 
-def bootstrap_odoo():
+if __name__ == '__main__':
     print(f"Connecting to Odoo at {ODOO_BASE_URL}...")
-    odoo = OdooAPIWrapper(ODOO_BASE_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
+    odoo = OdooAPI(ODOO_BASE_URL, ODOO_USERNAME, ODOO_PASSWORD, ODOO_DB)
 
-    install_modules(odoo)
-    seed_products(odoo)
-    seed_customers(odoo)
-    seed_helpdesk_catalog(odoo)
-    ensure_assistant_user(odoo)
-    configure_system_parameters(odoo)
-    configure_gmail_oauth(odoo)
-
-    print("\nOdoo bootstrap complete.")
-
-
-def install_modules(odoo):
     print("\nInstalling modules...")
-    print(" - updating module list")
-    odoo.update_module_list()
     for module in MODULES:
-        print(f" - {module}")
-        result = odoo.install_module(module)
-        if result:
-            print(f"   started installation for {module}")
-            time.sleep(5)
-        else:
-            print(f"   already installed or not found")
-
-
-def seed_products(odoo):
+        if odoo.install(module): print(f' - Installed {module}')
+        else: print(f' - {module} already installed')
+    odoo.update_module_list()
+    
     print("\nSeeding products...")
-    for product in PRODUCTS:
-        existing_ids = odoo.search("product.product", [("default_code", "=", product["default_code"])])
-        if existing_ids:
-            product_id = existing_ids[0]
-            odoo.update_product(product_id, product)
-            print(f" [~] Updated product {product['default_code']} (ID: {product_id})")
-            continue
-        product_id = odoo.create_product(product)
-        print(f" [+] Created product {product['name']} (ID: {product_id})")
+    for p in PRODUCTS:
+        if odoo.get_by_value(Table.Product, p): 
+            print(f' [~] Product: {p['name']} already exists')
+        else:
+            ids = odoo.create(Table.Product, [p])
+            print(f" [+] Created product {p['name']} (ID: {ids[0]})")
+    
+    print("\nSeeding customers...")
+    for c in CUSTOMERS:
+        if odoo.get_by_value(Table.Contact, c):
+            print(f' [~] Customer: {c['name']} already exists')
+        else:
+            ids = odoo.create(Table.Contact, [c])
+            print(f" [+] Created customer {c['name']} (ID: {ids[0]})")
 
-
-def seed_customers(odoo):
-    print("\nSeeding contacts...")
-    for customer in CUSTOMERS:
-        existing_ids = odoo.search("res.partner", [("name", "=", customer["name"])])
-        if existing_ids:
-            contact_id = existing_ids[0]
-            odoo.update_contact(contact_id, customer)
-            print(f" [~] Updated contact {customer['name']} (ID: {contact_id})")
-            continue
-        contact_id = odoo.create_contact(customer)
-        print(f" [+] Created contact {customer['name']} (ID: {contact_id})")
-
-
-def seed_helpdesk_catalog(odoo):
     print("\nSetting up helpdesk catalog...")
-    create_named_records(odoo, "helpdesk.ticket.team", TEAMS, "Team")
-    create_named_records(odoo, "helpdesk.ticket.type", TYPES, "Type")
-    create_named_records(odoo, "helpdesk.ticket.category", CATEGORIES, "Category")
-    create_named_records(odoo, "helpdesk.ticket.stage", STAGES, "Stage")
-    create_named_records(odoo, "helpdesk.ticket.tag", TAGS, "Tag")
+    for t in TEAMS:
+        team = {'name': t}
+        if odoo.get_by_value(Table.TicketTeam, team):
+            print(f" [~] Team {t} already exists.")
+        else: 
+            odoo.create(Table.TicketTeam, [team])
+            print(f' [+] Created Team: {t}')
 
+    for t in TYPES:
+        type = {'name': t}
+        if odoo.get_by_value(Table.TicketType, type):
+            print(f" [~] Type {t} already exists.")
+        else: 
+            odoo.create(Table.TicketType, [type])
+            print(f' [+] Created Type: {t}')
 
-def create_named_records(odoo, model, values, label):
-    for value in values:
-        if odoo.search(model, [("name", "=", value)]):
-            print(f" [~] {label} {value} already exists.")
-            continue
-        record_id = odoo._models.execute_kw(
-            ODOO_DB,
-            odoo._uid,
-            ODOO_PASSWORD,
-            model,
-            "create",
-            [{"name": value}],
-        )
-        print(f" [+] Created {label}: {value} (ID: {record_id})")
+    for c in CATEGORIES:
+        category = {'name': c}
+        if odoo.get_by_value(Table.TicketCategory, category):
+            print(f" [~] Category: {c} already exists.")
+        else: 
+            odoo.create(Table.TicketCategory, [category])
+            print(f' [+] Created Category: {c}')
 
+    for s in STAGES:
+        stage = {'name': s}
+        if odoo.get_by_value(Table.TicketStage, stage):
+            print(f" [~] Stage: {s} already exists.")
+        else: 
+            odoo.create(Table.TicketStage, [stage])
+            print(f' [+] Created Stage: {s}')
 
-def ensure_assistant_user(odoo):
+    for t in TAGS:
+        tag = {'name': t}
+        if odoo.get_by_value(Table.TicketTag, tag): 
+            print(f" [~] Tag: {t} already exists.")
+        else: 
+            odoo.create(Table.TicketTag, [tag])
+            print(f' [+] Created Tag: {t}')
+
     print("\nEnsuring assistant user exists...")
-    user = odoo.get_or_create_internal_user(
-        login=ASSISTANT_USER["login"],
-        name=ASSISTANT_USER["name"],
-        email=ASSISTANT_USER["email"],
-    )
-    print(f" [+] Assistant user ready: {user['name']} (login: {user['login']})")
+    user = odoo.get_by_value(Table.User, ASSISTANT_USER, exact=True)
+    if not user:
+        contact = { 
+            'name': ASSISTANT_USER['name'], 
+            'email': ASSISTANT_USER['email'], 
+            'company_type': 'person' 
+        }
+        ids = odoo.create(Table.Contact, [contact])
+        user = ASSISTANT_USER
+        user['partner_id'] = ids[0]
+        odoo.create(Table.User, [user])
 
-
-def configure_system_parameters(odoo):
     print("\nConfiguring system parameters...")
-    for key, value in SYSTEM_PARAMETERS.items():
-        odoo.set_system_parameter(key, value)
-        print(f" [+] Parameter set: {key} = {value}")
+    for k,v in SYSTEM_PARAMETERS.items():
+        param = odoo.get_by_value(Table.SystemParameter, {'key': k}, exact=True)
+        if param: odoo.update(Table.SystemParameter, [param[0]['id']], {'value': v})
+        else: odoo.create(Table.SystemParameter, [{'key': k, 'value': v}])
+        print(f" [+] Parameter set: {k} = {v}")
 
-
-def configure_gmail_oauth(odoo):
     print("\nConfiguring Gmail OAuth parameters...")
     client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
-    if client_id:
-        odoo.set_system_parameter("google_gmail_client_id", client_id)
+    if not client_id: print(" [~] GOOGLE_CLIENT_ID not found. Skipping google_gmail_client_id.")
+    else: 
+        p = { 'key': 'google_gmail_client_id', 'value': client_id }
+        param = odoo.get_by_value(Table.SystemParameter, {'key': p['key']}, exact=True)
+        if param: odoo.update(Table.SystemParameter, [param[0]['id']], {'value': p['value']})
+        else: odoo.create(Table.SystemParameter, [p])
         print(" [+] Parameter set: google_gmail_client_id")
-    else:
-        print(" [~] GOOGLE_CLIENT_ID not found. Skipping google_gmail_client_id.")
 
-    if client_secret:
-        odoo.set_system_parameter("google_gmail_client_secret", client_secret)
+    if not client_secret: print(" [~] GOOGLE_CLIENT_SECRET not found. Skipping google_gmail_client_secret.")
+    else:
+        p = { 'key': 'google_gmail_client_secret', 'value': client_secret }
+        param = odoo.get_by_value(Table.SystemParameter, { 'key': p['key'] }, exact=True)
+        if param: odoo.update(Table.SystemParameter, [param[0]['id']], {'value': client_secret})
+        else: odoo.create(Table.SystemParameter, [p])
         print(" [+] Parameter set: google_gmail_client_secret")
-    else:
-        print(" [~] GOOGLE_CLIENT_SECRET not found. Skipping google_gmail_client_secret.")
-
-
-if __name__ == "__main__":
-    bootstrap_odoo()
+    

@@ -1,412 +1,189 @@
-import json
-import re
+import json, re
+from email.utils import parseaddr
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from agents.intake_agent.dependencies import IntakeDependencies
-from agents.intake_agent.schemas import IntakeRequestSchema
+from agents.intake_agent.schemas import HelpdeskTicketSchema, IntakeRequestSchema
 from agents.intake_agent.state import IntakeState
-from shared.catalog import normalize_urgency, normalize_ticket_type
+from shared.catalog import normalize_ticket_type, normalize_urgency
+from shared.prompts import COMPANY_MATCHING_PROMPT, INTAKE_EXTRACTION_PROMPT
 
 
-# helper para obtener dependencias inyectadas desde el config del grafo
-def _get_deps(config: RunnableConfig) -> IntakeDependencies:
+def get_deps(config: RunnableConfig) -> IntakeDependencies:
     deps = config.get("configurable", {}).get("deps")
-    if deps is None:
-        raise RuntimeError("IntakeDependencies no inyectadas en config")
+    if not deps: raise RuntimeError("IntakeDependencies no están configuradas")
     return deps
 
 
-def _clean(value: object) -> str:
+def clean(value: object) -> str:
     return str(value or "").strip()
 
 
-def _extract_sender_parts(raw_sender: str, sender_name: str = "") -> tuple[str, str]:
-    provided_name = _clean(sender_name)
-    raw_sender = _clean(raw_sender)
-    if not raw_sender:
-        return provided_name, ""
-
-    match = re.match(r'(?P<name>.*?)\s*<(?P<email>[^>]+)>', raw_sender)
-    if match:
-        display_name = _clean(match.group("name")).strip('"')
-        email = _clean(match.group("email")).lower()
-        return provided_name or display_name, email
-
-    if "@" in raw_sender:
-        return provided_name, raw_sender.lower()
-
-    return provided_name or raw_sender, ""
+def clean_json(content: object) -> dict:
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"```$", "", text).strip()
+    return json.loads(text)
 
 
-def _infer_company_name(parsed_company: str, sender_email: str) -> str:
-    parsed_company = _clean(parsed_company)
-    if parsed_company:
-        return parsed_company
-
-    if "@" not in sender_email:
-        return "Desconocido"
-
-    domain = sender_email.split("@", 1)[1].split(".", 1)[0].strip()
-    return domain.capitalize() if domain else "Desconocido"
+def priority_from_urgency(urgency: str) -> str:
+    return {"baja": "0", "media": "1", "alta": "2"}.get(urgency, "1")
 
 
-
-# convierte diferentes formatos de entrada (email, chat, etc) a texto uniforme
-# error si la entrada está vacía o el canal no tiene campos mínimos
-async def prepare_input_node(state: IntakeState, config: RunnableConfig) -> dict:
-    source_input = state["source_input"]
-    channel = source_input.get("channel", "unknown")
-
-    if channel == "email":
-        subject = source_input.get("subject", "")
-        body = source_input.get("body", "")
-        sender_name, sender_email = _extract_sender_parts(
-            raw_sender=source_input.get("from", "") or source_input.get("email_from", ""),
-            sender_name=source_input.get("sender_name", "") or source_input.get("author_name", ""),
-        )
-
-        # validación: un email sin asunto y sin cuerpo no tiene información útil
-        if not subject and not body:
-            return {
-                "error": "Email recibido sin asunto ni cuerpo. No se puede procesar.",
-            }
-
-        text = f"""
-Canal: email
-Remitente nombre: {sender_name}
-Remitente email: {sender_email}
-Asunto: {subject}
-Mensaje:
-{body}
-"""
-
-    elif channel == "chat":
-        user_name = source_input.get("user_name", "")
-        message = source_input.get("message", "")
-        company_name = source_input.get("company_name", "")
-
-        # validación: un mensaje de chat vacío no tiene información útil
-        if not message:
-            return {
-                "error": "Mensaje de chat recibido vacío. No se puede procesar.",
-            }
-
-        text = f"""
-Canal: chat
-Usuario: {user_name}
-Empresa: {company_name}
-Mensaje:
-{message}
-"""
-
-    else:
-        # fallback genérico para otros formatos no reconocidos
-        text = str(source_input)
-
-        # validación: si el fallback también queda vacío no podemos continuar
-        if not text.strip():
-            return {
-                "error": f"Canal '{channel}' no reconocido y sin contenido procesable.",
-            }
-
+def ticket_catalog(ticket_type: str) -> tuple[str, str, str, list[str]]:
     return {
-        "messages": [AIMessage(content="Entrada convertida a texto unificado")],
-        "extracted_text": text.strip(),
-        "sender_name": sender_name if channel == "email" else source_input.get("user_name", ""),
-        "sender_email": sender_email if channel == "email" else "",
-        "error": None,
-    }
+        "budget": ("Presupuestos", "Presupuesto", "Consulta presupuesto", []),
+        "issue": ("Soporte cliente", "Soporte", "Problema", []),
+    }.get(ticket_type, ("Soporte cliente", "Soporte", "Interno", ["Pendiente validación"]))
 
 
-# extrae del texto unificado un JSON estructurado usando el LLM
-# además clasifica el mensaje como presupuesto, incidencia o descarte
-async def extract_request_node(state: IntakeState, config: RunnableConfig) -> dict:
-    deps = _get_deps(config)
-    extracted_text = state["extracted_text"]
-    sender_name = _clean(state.get("sender_name", ""))
-    sender_email = _clean(state.get("sender_email", ""))
+def email_to_text(source: dict) -> tuple[str, str, str]:
+    raw_sender = source.get("from") or source.get("email_from") or ""
+    parsed_name, parsed_email = parseaddr(raw_sender)
+    sender_name = clean(source.get("sender_name") or source.get("author_name") or parsed_name)
+    sender_email = clean(source.get("sender_email") or source.get("email") or source.get("email_from_address") or parsed_email).lower()
+    text = f"Canal: email\nRemitente: {raw_sender}\nNombre remitente: {sender_name}\nEmail remitente: {sender_email}\nAsunto: {source.get('subject', '')}\nMensaje:\n{source.get('body', '')}"
+    return text, sender_name, sender_email
 
-    prompt = f"""
-Eres un agente que analiza mensajes de clientes y los transforma en solicitudes estructuradas para procesarlas después.
 
-Debes devolver un JSON válido con esta estructura exacta:
-{{
-  "company_name": "string",
-  "project_summary": "string",
-  "requirements": ["string"],
-  "urgency": "string",
-  "ticket_type": "budget|issue|discard",
-  "missing_information": []
-}}
-
-Significado de ticket_type:
-- "budget": el cliente pide presupuesto, propuesta, precio, implantación o módulos
-- "issue": el cliente reporta un problema, error, incidencia o soporte
-- "discard": el mensaje no contiene una petición útil o clara
-
-Reglas:
-- No inventes datos
-- Conserva los requisitos tal como los identifiques semánticamente
-- Si falta información relevante, añádelo en missing_information
-- Si no hay una necesidad clara, usa ticket_type = "discard"
-- Devuelve solo JSON válido, sin explicaciones
-
-Texto del cliente:
-{extracted_text}
-"""
-
-    response = await deps.llm.ainvoke([HumanMessage(content=prompt)])
-    content = response.content if isinstance(response.content, str) else str(response.content)
-
-    try:
-        parsed = IntakeRequestSchema.model_validate(json.loads(content)).model_dump()
-    except Exception:
-        return {
-            "error": "El LLM no devolvió un JSON válido tras el intento de extracción.",
-        }
-
-    # normaliza urgencia a valores cerrados
-    parsed["urgency"] = normalize_urgency(parsed.get("urgency", ""))
-
-    # normaliza tipo de ticket a valores cerrados
-    parsed["ticket_type"] = normalize_ticket_type(parsed.get("ticket_type", ""))
-
-    # limpieza mínima para evitar estructuras inesperadas
-    parsed["company_name"] = _infer_company_name(parsed.get("company_name", ""), sender_email)
-    parsed["sender_name"] = sender_name
-    parsed["sender_email"] = sender_email
-
-    return {
-        "messages": [
-            AIMessage(
-                content=(
-                    f"Solicitud estructurada generada para {parsed['company_name']} "
-                    f"con tipo {parsed['ticket_type']} y urgencia {parsed['urgency']}"
-                )
-            )
-        ],
-        "normalized_request": parsed,
-        "ticket_type": parsed["ticket_type"],
-        "error": None,
-    }
-
-# prepara los datos del ticket según la solicitud estructurada
-# aquí ya se hace el mapeo directo a los valores que existen realmente en tu Odoo local
-async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dict:
-    normalized_request = state["normalized_request"]
-
-    company_name = normalized_request.get("company_name", "Desconocido")
-    sender_name = normalized_request.get("sender_name", "").strip()
-    sender_email = normalized_request.get("sender_email", "").strip()
-    project_summary = normalized_request.get("project_summary", "").strip()
-    requirements = normalized_request.get("requirements", [])
-    urgency = normalized_request.get("urgency", "media")
-    ticket_type = normalized_request.get("ticket_type", "discard")
-    missing_information = normalized_request.get("missing_information", [])
-
-    # validación: necesitamos al menos un resumen mínimo para crear ticket
-    if not project_summary:
-        return {
-            "error": "La solicitud no contiene un resumen suficiente para crear el ticket.",
-        }
-
-    # mapeo simple y directo al catálogo real que has creado en Odoo
-    if ticket_type == "budget":
-        team_name = "Presupuestos"
-        type_name = "Presupuesto"
-        category_name = "Consulta presupuesto"
-        tag_names = ["Cliente nuevo"]
-
-    elif ticket_type == "issue":
-        team_name = "Soporte cliente"
-        type_name = "Soporte"
-        category_name = "Problema"
-        tag_names = []
-
-    else:
-        # los mensajes poco claros van a soporte para revisión manual
-        team_name = "Soporte cliente"
-        type_name = "Soporte"
-        category_name = "Interno"
-        tag_names = ["Pendiente validación"]
-
-    # mapeo de urgencia a prioridad real del módulo helpdesk_mgmt
-    # 0 = baja, 1 = media, 2 = alta
-    urgency_to_priority = {
-        "baja": "0",
-        "media": "1",
-        "alta": "2",
-    }
-    priority = urgency_to_priority.get(urgency, "1")
-
-    # si faltan datos relevantes marcamos una etiqueta adicional
-    if missing_information and "Faltan datos" not in tag_names:
-        tag_names.append("Faltan datos")
-
-    # si la urgencia es alta añadimos también la etiqueta Urgente
-    if urgency == "alta" and "Urgente" not in tag_names:
-        tag_names.append("Urgente")
-
-    # descripción corta y útil en texto plano
-    description_lines = [
-        f"Empresa: {company_name}",
-        *(["Contacto: " + sender_name] if sender_name else []),
-        *(["Email: " + sender_email] if sender_email else []),
+def build_description(request: dict, company: dict | None, history: dict | None = None) -> str:
+    lines = [
+        f"Empresa detectada: {request.get('company_name') or 'No identificada'}",
+        f"Empresa Odoo: {(company or {}).get('name') or 'No asociada'}",
+        f"Contacto del correo: {request.get('sender_name') or 'No indicado'}",
+        f"Email del correo: {request.get('sender_email') or 'No indicado'}",
         "",
-        f"Resumen: {project_summary}",
+        f"Resumen: {request.get('project_summary') or ''}",
     ]
 
-    if requirements:
-        description_lines.append("")
-        description_lines.append("Requisitos detectados:")
-        description_lines.extend([f"- {req}" for req in requirements[:5]])
+    if request.get("requirements"): lines += ["", "Requisitos detectados:"] + [f"- {r}" for r in request["requirements"][:5]]
+    if request.get("missing_information"): lines += ["", "Faltan datos:"] + [f"- {m}" for m in request["missing_information"][:3]]
+    if history: lines += ["", "Historial Odoo:", f"- Pedidos encontrados: {len(history.get('orders', []))}", f"- Tickets anteriores encontrados: {len(history.get('tickets', []))}"]
 
-    if missing_information:
-        description_lines.append("")
-        description_lines.append("Faltan datos:")
-        description_lines.extend([f"- {note}" for note in missing_information[:3]])
+    return "\n".join(lines)
 
 
-    ticket_payload = {
-        "title": project_summary,
-        "description": "\n".join(description_lines),
-        "priority": priority,
-        "team_name": team_name,
+async def select_company(deps: IntakeDependencies, company_name: str) -> dict | None:
+    """Busca empresas en Odoo y deja que el LLM elija el ID correcto."""
+    company_name = clean(company_name)
+    if not company_name: return None
+
+    companies = deps.odoo_mcp_client.find_company(name=company_name, exact=False, limit=20)
+    if not companies: return None
+
+    companies_text = "\n".join(f'- id={c["id"]}, name="{c["name"]}"' for c in companies)
+    prompt = COMPANY_MATCHING_PROMPT.format(company_name=company_name, companies_text=companies_text)
+
+    try:
+        company_id = clean_json((await deps.llm.ainvoke([HumanMessage(content=prompt)])).content).get("company_id")
+        company_id = int(company_id) if company_id is not None else None
+    except Exception:
+        return None
+
+    return next((c for c in companies if int(c["id"]) == company_id), None)
+
+
+async def prepare_input_node(state: IntakeState, config: RunnableConfig) -> dict:
+    source = state["source_input"]
+    if not source.get("subject") and not source.get("body"): return {"error": "Email recibido sin asunto ni cuerpo."}
+
+    text, sender_name, sender_email = email_to_text(source)
+    return {"messages": [AIMessage(content="Email preparado")], "extracted_text": text, "sender_name": sender_name, "sender_email": sender_email, "source_channel": "email", "error": None}
+
+
+async def extract_request_node(state: IntakeState, config: RunnableConfig) -> dict:
+    deps = get_deps(config)
+    prompt = INTAKE_EXTRACTION_PROMPT.format(email_text=state["extracted_text"])
+
+    try:
+        request = IntakeRequestSchema.model_validate(clean_json((await deps.llm.ainvoke([HumanMessage(content=prompt)])).content)).model_dump()
+    except Exception as exc:
+        return {"error": f"El LLM no devolvió una solicitud válida: {exc}"}
+
+    request.update({
+        "urgency": normalize_urgency(request.get("urgency")),
+        "ticket_type": normalize_ticket_type(request.get("ticket_type")),
+        "company_name": clean(request.get("company_name")),
+        "sender_name": clean(state.get("sender_name")),
+        "sender_email": clean(state.get("sender_email")).lower(),
+    })
+
+    return {"messages": [AIMessage(content=f"Solicitud extraída para {request['company_name'] or 'empresa no identificada'}")], "normalized_request": request, "ticket_type": request["ticket_type"], "sender_name": request["sender_name"], "sender_email": request["sender_email"], "error": None}
+
+
+async def prepare_ticket_node(state: IntakeState, config: RunnableConfig) -> dict:
+    deps = get_deps(config)
+    request = state["normalized_request"]
+    company = await select_company(deps, request["company_name"])
+
+    company_id = company.get("id") if company else None
+    history = deps.odoo_mcp_client.get_customer_history(company_id) if company_id else None
+    team, type_name, category, tags = ticket_catalog(request["ticket_type"])
+
+    tags = list(tags)
+    if not company: tags.append("Cliente nuevo")
+    if request.get("missing_information"): tags.append("Faltan datos")
+    if request.get("urgency") == "alta": tags.append("Urgente")
+
+    ticket_data = {
+        "title": request["project_summary"],
+        "description": build_description(request, company, history),
+        "priority": priority_from_urgency(request["urgency"]),
+        "team_name": team,
         "type_name": type_name,
-        "category_name": category_name,
-        "tag_names": tag_names,
+        "category_name": category,
+        "tag_names": list(dict.fromkeys(tags)),
         "motive_name": None,
+        "company_id": company_id,
+        "company_name": company.get("name") if company else None,
+        "detected_company_name": request["company_name"],
+        "partner_name": company.get("name") if company else "",
+        "partner_email": request.get("sender_email", ""),
     }
 
-    return {
-        "messages": [
-            AIMessage(
-                content=f"Ticket preparado para el equipo {team_name}"
-            )
-        ],
-        "ticket_payload": ticket_payload,
-        "error": None,
-    }
+    try:
+        ticket = HelpdeskTicketSchema.model_validate(ticket_data).model_dump()
+    except Exception as exc:
+        return {"error": f"No se pudo preparar el ticket: {exc}"}
+
+    return {"messages": [AIMessage(content=f"Ticket preparado para {ticket['team_name']}")], "ticket_payload": ticket, "customer_context": {"company": company, "customer_history": history}, "error": None}
 
 
-# crea el ticket en Odoo usando los modelos reales del módulo helpdesk de OCA
-# resuelve nombres a ids antes de crear el ticket para no depender de textos sueltos
 async def create_ticket_node(state: IntakeState, config: RunnableConfig) -> dict:
-    deps = _get_deps(config)
-
-    ticket_payload = state["ticket_payload"]
-    ticket_type = state["ticket_type"]
+    deps = get_deps(config)
+    ticket = HelpdeskTicketSchema.model_validate(state["ticket_payload"])
     warnings = []
 
     try:
-        # resolver equipo; si no existe usamos uno por defecto
-        team_id = deps.odoo_service.get_team_id_by_name(ticket_payload["team_name"])
-        if not team_id:
-            warnings.append(
-                f"No existe el equipo '{ticket_payload['team_name']}' en Odoo. Se usará el equipo por defecto."
-            )
-            team_id = deps.odoo_service.get_team_id_by_name("Soporte cliente")
+        team = deps.odoo_mcp_client.find_helpdesk_team(ticket.team_name) or deps.odoo_mcp_client.find_helpdesk_team("Soporte cliente")
+        if not team: raise ValueError("No existe equipo válido en Odoo.")
 
-        if not team_id:
-            raise ValueError("No existe tampoco el equipo por defecto 'Soporte cliente' en Odoo")
+        ticket_type = deps.odoo_mcp_client.find_ticket_type(ticket.type_name)
+        category = deps.odoo_mcp_client.find_ticket_category(ticket.category_name)
+        tag_ids = deps.odoo_mcp_client.find_ticket_tags(ticket.tag_names)
 
-        # resolver tipo de ticket; si no existe se omite
-        type_id = deps.odoo_service.get_ticket_type_id_by_name(ticket_payload["type_name"])
-        if not type_id:
-            warnings.append(
-                f"No existe el tipo de ticket '{ticket_payload['type_name']}' en Odoo. Se creará sin tipo."
-            )
-            type_id = None
+        if not ticket_type: warnings.append(f"No existe tipo '{ticket.type_name}'")
+        if not category: warnings.append(f"No existe categoría '{ticket.category_name}'")
+        if ticket.tag_names and not tag_ids: warnings.append("No se resolvieron etiquetas")
+        if not ticket.company_id and ticket.detected_company_name: warnings.append(f"Empresa '{ticket.detected_company_name}' no asociada")
 
-        # resolver categoría; si no existe se omite
-        category_id = deps.odoo_service.get_category_id_by_name(ticket_payload["category_name"])
-        if not category_id:
-            warnings.append(
-                f"No existe la categoría '{ticket_payload['category_name']}' en Odoo. Se creará sin categoría."
-            )
-            category_id = None
-
-        # resolver etiquetas; si alguna no existe simplemente no se añade
-        tag_ids = deps.odoo_service.get_tag_ids_by_names(ticket_payload["tag_names"])
-        if ticket_payload.get("tag_names") and not tag_ids:
-            warnings.append("No se pudo resolver ninguna de las etiquetas indicadas.")
-
-        # resolver motivo solo si se ha informado; si no existe se omite
-        motive_id = None
-        if ticket_payload.get("motive_name"):
-            motive_id = deps.odoo_service.get_motive_id_by_name_and_team(
-                ticket_payload["motive_name"],
-                team_id,
-            )
-            if not motive_id:
-                warnings.append(
-                    f"No existe el motivo '{ticket_payload['motive_name']}' para el equipo seleccionado. Se creará sin motivo."
-                )
-
-        # ampliar descripción con warnings si los hay
-        description = ticket_payload["description"]
-        if warnings:
-            description += "\n\n---\nObservaciones automáticas:\n- " + "\n- ".join(warnings)
-
-        partner_id = None
-        sender_email = state.get("sender_email", "").strip()
-        sender_name = state.get("sender_name", "").strip()
-        company_name = state.get("normalized_request", {}).get("company_name", "").strip()
-
-        if sender_email:
-            existing_partner = deps.odoo_service.get_partner_by_email(sender_email)
-            if existing_partner:
-                partner_id = existing_partner["id"]
-            else:
-                partner_id = deps.odoo_service.create_contact(
-                    {
-                        "name": sender_name or company_name or sender_email,
-                        "email": sender_email,
-                        "company_type": "person",
-                    }
-                )
-
-        # crear ticket real en helpdesk.ticket
-        ticket_id = deps.odoo_service.create_helpdesk_ticket(
-            title=ticket_payload["title"],
-            description=description,
-            team_id=team_id,
-            priority=ticket_payload["priority"],
-            type_id=type_id,
-            category_id=category_id,
-            tag_ids=tag_ids,
-            motive_id=motive_id,
-            partner_id=partner_id,
-            origin_channel=state.get("source_input", {}).get("channel"),
+        description = ticket.description + (("\n\nObservaciones:\n- " + "\n- ".join(warnings)) if warnings else "")
+        ticket_id = deps.odoo_mcp_client.create_helpdesk_ticket(
+            title=ticket.title, description=description, team_id=team["id"],
+            priority=ticket.priority, type_id=ticket_type["id"] if ticket_type else None,
+            category_id=category["id"] if category else None, tag_ids=tag_ids,
+            partner_id=ticket.company_id, partner_name=ticket.partner_name,
+            partner_email=ticket.partner_email, origin_channel="email",
         )
+    except Exception as exc:
+        return {"error": f"Error al crear el ticket en Odoo: {exc}"}
 
-    except Exception as e:
-        return {
-            "error": f"Error al crear el ticket en Odoo: {e}",
-        }
-
-    return {
-        "messages": [
-            AIMessage(content=f"Ticket creado correctamente con id {ticket_id}")
-        ],
-        "ticket_id": ticket_id,
-        "final_text": (
-            f"Ticket creado correctamente en Odoo con id {ticket_id} "
-            f"y tipo {ticket_type}."
-        ),
-        "warnings": warnings,
-        "error": None,
-    }
+    return {"messages": [AIMessage(content=f"Ticket creado correctamente con id {ticket_id}")], "ticket_id": ticket_id, "final_text": f"Ticket creado correctamente en Odoo con id {ticket_id} y tipo {state['ticket_type']}.", "warnings": warnings, "error": None}
 
 
-# nodo terminal de error: se alcanza cuando un nodo anterior detecta un fallo
 async def error_node(state: IntakeState) -> dict:
-    error_msg = state.get("error", "Error desconocido en el agente de intake")
-
-    return {
-        "messages": [AIMessage(content=f"No se ha podido procesar la entrada: {error_msg}")],
-        "normalized_request": {},
-        "final_text": f"Error: {error_msg}",
-    }
+    error = state.get("error") or "Error desconocido en el agente de intake"
+    return {"messages": [AIMessage(content=f"No se ha podido procesar la entrada: {error}")], "normalized_request": {}, "final_text": f"Error: {error}"}

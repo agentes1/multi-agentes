@@ -53,6 +53,35 @@ budget_route = RouteDefinition(
     ),
 )
 
+sales_route = RouteDefinition(
+    name="sales",
+    utterances=(
+        "queremos mejorar el proceso comercial",
+        "necesitamos organizar oportunidades de venta",
+        "buscamos una solucion para seguimiento comercial",
+        "queremos automatizar el seguimiento de leads",
+        "necesitamos mejorar el pipeline de ventas",
+        "queremos centralizar la gestion comercial del equipo",
+        "buscamos mejorar la captacion y conversion de clientes",
+        "queremos ayuda para ordenar el area de ventas",
+    ),
+    keywords=(
+        "ventas",
+        "comercial",
+        "pipeline",
+        "lead",
+        "leads",
+        "oportunidades",
+        "seguimiento comercial",
+        "captacion",
+        "captación",
+        "conversion",
+        "conversión",
+        "equipo comercial",
+        "crm comercial",
+    ),
+)
+
 
 discard_route = RouteDefinition(
     name="discard",
@@ -86,4 +115,4 @@ discard_route = RouteDefinition(
     threshold=0.0,
 )
 
-routes = (budget_route, discard_route)
+routes = (budget_route, sales_route, discard_route)

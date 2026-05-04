@@ -28,6 +28,12 @@
                             class="btn-primary"
                             invisible="state == 'processed'"/>
 
+                    <button name="action_process_now"
+                            type="object"
+                            string="Process Now"
+                            class="btn-secondary"
+                            invisible="state not in ('new', 'error')"/>
+
                     <button name="action_mark_error"
                             type="object"
                             string="Mark as Error"
@@ -42,7 +48,7 @@
 
                     <field name="state"
                            widget="statusbar"
-                           statusbar_visible="new,processed,error"/>
+                           statusbar_visible="new,processing,processed,error"/>
                 </header>
 
                 <sheet>
@@ -93,6 +99,10 @@
                 <filter name="filter_processed"
                         string="Processed"
                         domain="[('state', '=', 'processed')]"/>
+
+                <filter name="filter_processing"
+                        string="Processing"
+                        domain="[('state', '=', 'processing')]"/>
 
                 <filter name="filter_error"
                         string="Error"

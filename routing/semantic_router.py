@@ -69,7 +69,20 @@ _BUDGET_SCOPE_TERMS = {
     "automatización",
 }
 
-_ISSUE_BLOCKER_TERMS = {
+_SALES_TERMS = {
+    "ventas",
+    "comercial",
+    "pipeline",
+    "lead",
+    "leads",
+    "oportunidades",
+    "captacion",
+    "captación",
+    "seguimiento comercial",
+    "equipo comercial",
+}
+
+_NON_BUDGET_BLOCKER_TERMS = {
     "error",
     "problema",
     "incidencia",
@@ -80,6 +93,8 @@ _ISSUE_BLOCKER_TERMS = {
     "roto",
     "bloqueado",
     "bloquea",
+    "soporte",
+    "ayuda",
 }
 
 
@@ -169,6 +184,7 @@ class SemanticTicketRouter:
         text_tokens: set[str],
     ) -> RouteMatch | None:
         budget_route = next((route for route in self._routes if route.name == "budget"), None)
+        sales_route = next((route for route in self._routes if route.name == "sales"), None)
         if not budget_route:
             return None
 
@@ -178,18 +194,24 @@ class SemanticTicketRouter:
         scope_hits = sum(
             1 for term in _BUDGET_SCOPE_TERMS if _normalize_text(term) in normalized_text
         )
-        issue_hits = sum(
-            1 for term in _ISSUE_BLOCKER_TERMS if _normalize_text(term) in normalized_text
+        blocker_hits = sum(
+            1 for term in _NON_BUDGET_BLOCKER_TERMS if _normalize_text(term) in normalized_text
+        )
+        sales_hits = sum(
+            1 for term in _SALES_TERMS if _normalize_text(term) in normalized_text
         )
         total_keyword_hits = len(text_tokens & _tokenize(" ".join(budget_route.keywords)))
 
-        if issue_hits >= 1 and commercial_hits == 0:
-            return None
+        if blocker_hits >= 1 and commercial_hits == 0:
+            return RouteMatch(name=discard_route.name, score=1.0, utterance="priority_discard_match")
 
         if (commercial_hits >= 1 and scope_hits >= 1) or (
             commercial_hits >= 1 and total_keyword_hits >= 2
         ):
             return RouteMatch(name="budget", score=1.0, utterance="priority_budget_match")
+
+        if sales_route and sales_hits >= 2 and commercial_hits == 0:
+            return RouteMatch(name="sales", score=1.0, utterance="priority_sales_match")
 
         return None
 

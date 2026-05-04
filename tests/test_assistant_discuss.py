@@ -1,219 +1,198 @@
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 
-from agents.budget_agent.dependencies import BudgetDependencies
-from agents.budget_agent.tools import BudgetAgentTools
-from agents.general_agent.service import GENERAL_AGENT_NAME, GENERAL_AGENT_RESPONSE
+from agents.assistant_chat_agent.service import ASSISTANT_CHAT_AGENT_NAME
+from agents.sales_agent.service import SALES_AGENT_NAME
 import api
 from orchestration.assistant_discuss import DiscussMessageOrchestrator
 
 
-class FakeBudgetOdooWrapper:
-    def __init__(self):
-        self.create_sale_order_called = False
-
-    def find_products_by_text(self, text, limit=5):
-        catalog = {
-            "crm": {"id": 11, "name": "CRM", "default_code": "CRM"},
-            "automatizacion comercial": {
-                "id": 22,
-                "name": "Automatizacion Comercial",
-                "default_code": "AUTO",
-            },
-        }
-        normalized = str(text).lower().strip()
-        return [catalog[normalized]] if normalized in catalog else []
-
-    def get_or_create_contact(self, company_name):
-        return 501
-
-    def create_sale_order(self, partner_id):
-        self.create_sale_order_called = True
-        return 701
-
-    def create_sale_order_line(self, order_id, product_id, quantity=1):
-        return 1
-
-    def get_sale_order(self, order_id):
-        return {"id": order_id, "amount_untaxed": 3000.0, "amount_total": 3000.0}
-
-    def get_sale_order_lines(self, order_id):
-        return [
-            {
-                "name": "CRM",
-                "product_uom_qty": 1,
-                "price_unit": 1200.0,
-                "price_subtotal": 1200.0,
-                "default_code": "CRM",
-            },
-            {
-                "name": "Automatizacion Comercial",
-                "product_uom_qty": 1,
-                "price_unit": 1800.0,
-                "price_subtotal": 1800.0,
-                "default_code": "AUTO",
-            },
-        ]
-
-
-class FakeOdooMCPClient:
-    def __init__(self, wrapper: FakeBudgetOdooWrapper):
-        self.wrapper = wrapper
-
-    def find_products_by_text(self, text: str, limit: int = 5):
-        return self.wrapper.find_products_by_text(text, limit=limit)
-
-    def get_or_create_contact(self, company_name: str):
-        return self.wrapper.get_or_create_contact(company_name)
-
-    def create_sale_order(self, partner_id: int):
-        return self.wrapper.create_sale_order(partner_id)
-
-    def create_sale_order_line(self, order_id: int, product_id: int, quantity: int = 1):
-        return self.wrapper.create_sale_order_line(order_id, product_id, quantity=quantity)
-
-    def get_sale_order(self, order_id: int):
-        return self.wrapper.get_sale_order(order_id)
-
-    def get_sale_order_lines(self, order_id: int):
-        return self.wrapper.get_sale_order_lines(order_id)
-
-    def get_product(self, product_id: int):
-        return None
-
-    def get_customer_profile(self, company_name: str):
-        return {"segment": "pyme", "known_customer": True, "email": "alejandro@empresa.com"}
-
-    def get_product_catalog_snapshot(self, product_ids: list[int]):
-        return [
-            {
-                "id": 11,
-                "name": "CRM",
-                "default_code": "CRM",
-                "price": 1200.0,
-                "description": "Gestion comercial base.",
-            },
-            {
-                "id": 22,
-                "name": "Automatizacion Comercial",
-                "default_code": "AUTO",
-                "price": 1800.0,
-                "description": "Automatizaciones para ventas.",
-            },
-        ]
-
-    def find_related_products(self, product_ids: list[int], limit: int = 3):
-        return [
-            {
-                "id": 31,
-                "name": "Helpdesk y Soporte",
-                "default_code": "HELP",
-                "price": 950.0,
-            }
-        ][:limit]
-
-
-class FakeBudgetLLM:
-    async def ainvoke(self, messages):
-        prompt = messages[-1].content
-        return AIMessage(
-            content=(
-                "Hola Alejandro,\n\n"
-                "He preparado un presupuesto inicial con los servicios detectados.\n"
-                "Referencia del presupuesto: 701\n"
-                "Importe total estimado: 3000.0 EUR\n"
-                "Servicios incluidos: CRM, Automatizacion Comercial\n\n"
-                f"Contexto usado: {prompt}"
-            )
-        )
-
-
-def _build_budget_deps(wrapper: FakeBudgetOdooWrapper):
-    def _builder(model: str | None = None) -> BudgetDependencies:
-        return BudgetDependencies(
-            llm=FakeBudgetLLM(),
-            odoo_wrapper=wrapper,
-            tools=BudgetAgentTools(mcp_client=FakeOdooMCPClient(wrapper)),
-        )
-
-    return _builder
+def _build_orchestrator() -> DiscussMessageOrchestrator:
+    return DiscussMessageOrchestrator()
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_routes_budget_and_returns_reply() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+async def test_discuss_message_routes_budget_and_uses_chat_agent() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
             "ticket_id": 200,
             "ticket_title": "Solicitud inicial",
+            "ticket_description": "Cliente interesado en CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
             "channel_id": 5,
             "channel_name": "Ticket 200 - Asistente Virtual",
             "message_id": 10,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
             "body": "Hola, necesito presupuesto para CRM y automatizacion comercial en Odoo.",
+            "recent_messages": [
+                {"author_name": "Asistente Virtual", "body": "Hola, he recibido tu ticket."},
+                {"author_name": "Alejandro", "body": "Necesito presupuesto para CRM."},
+            ],
         },
         thread_id="discuss-budget",
     )
 
     assert result["ok"] is True
     assert result["route_name"] == "budget"
-    assert result["agent_name"] == "budget_agent"
-    assert "Hola Alejandro," in result["reply_text"]
-    assert "Referencia del presupuesto: 701" in result["reply_text"]
-    assert result["quote_summary"]["sale_order_id"] == 701
-    assert budget_wrapper.create_sale_order_called is True
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "Si quieres que siga adelante" in result["reply_text"]
+    assert "<div" not in result["reply_text"]
+    assert result["quote_summary"] == {}
     assert result["trace"] == [
         "discuss_message_received",
         "route_decided:budget",
-        "budget_request_prepared",
-        "agent_completed:budget_agent",
+        "response_built:discuss_orchestrator",
     ]
+    assert result["actions"] == []
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_routes_discard_and_returns_fixed_reply() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
+async def test_discuss_message_routes_sales_and_returns_sales_reply() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 207,
+            "ticket_title": "Pipeline comercial",
+            "ticket_description": "Queremos ordenar oportunidades y seguimiento comercial.",
+            "channel_id": 12,
+            "channel_name": "Ticket 207 - Asistente Virtual",
+            "message_id": 17,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "Queremos mejorar el pipeline y el seguimiento de leads.",
+        }
     )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "sales"
+    assert result["agent_name"] == SALES_AGENT_NAME
+    assert "objetivo comercial" in result["reply_text"] or "conversación comercial" in result["reply_text"]
+    assert result["actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_promotes_discard_to_sales_using_ticket_context() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 209,
+            "ticket_title": "Pipeline comercial",
+            "ticket_description": "Queremos mejorar oportunidades, leads y seguimiento comercial.",
+            "channel_id": 14,
+            "channel_name": "Ticket 209 - Asistente Virtual",
+            "message_id": 19,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "de acuerdo",
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "sales"
+    assert "context_route_promoted:sales" in result["trace"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_marks_sales_ticket_ready_when_user_confirms_creation() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 208,
+            "ticket_title": "Pipeline comercial",
+            "ticket_description": "Queremos organizar oportunidades y seguimiento comercial.",
+            "channel_id": 13,
+            "channel_name": "Ticket 208 - Asistente Virtual",
+            "message_id": 18,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "adelante",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": "Cuando lo veas correcto, dime sí o adelante y lo marcaré como Ready for next stage para crear la oportunidad comercial en CRM.",
+                }
+            ],
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "sales"
+    assert result["reply_text"] == "Perfecto, marco el ticket como listo para la siguiente fase para crear la oportunidad comercial en CRM."
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 208}]
+    assert "sales_creation_confirmed" in result["trace"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_marks_sales_ticket_ready_when_prompt_uses_quotes() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 210,
+            "ticket_title": "Mejora del pipeline comercial",
+            "ticket_description": "Queremos organizar oportunidades, leads y seguimiento comercial.",
+            "channel_id": 15,
+            "channel_name": "Ticket 210 - Asistente Virtual",
+            "message_id": 20,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "adelante",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": (
+                        "He entendido que se trata de una conversación comercial. "
+                        "Cuando lo veas correcto, dime 'sí' o 'adelante' y lo marcaré como "
+                        "'Ready for next stage' para crear la oportunidad comercial en CRM."
+                    ),
+                }
+            ],
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "sales"
+    assert result["reply_text"] == "Perfecto, marco el ticket como listo para la siguiente fase para crear la oportunidad comercial en CRM."
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 210}]
+    assert "sales_creation_confirmed" in result["trace"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_routes_support_messages_to_discard() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
             "ticket_id": 201,
-            "ticket_title": "Consulta",
+            "ticket_title": "Error en facturacion",
+            "ticket_team": "Soporte cliente",
+            "ticket_stage": "New",
             "channel_id": 6,
             "channel_name": "Ticket 201 - Asistente Virtual",
             "message_id": 11,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
-            "body": "Buenos dias, que tiempo hace hoy?",
+            "body": "Me aparece un error al guardar una factura.",
         }
     )
 
     assert result["ok"] is True
     assert result["route_name"] == "discard"
-    assert result["agent_name"] == GENERAL_AGENT_NAME
-    assert result["reply_text"] == GENERAL_AGENT_RESPONSE
-    assert budget_wrapper.create_sale_order_called is False
-    assert result["trace"] == [
-        "discuss_message_received",
-        "route_decided:discard",
-        "agent_completed:general_agent",
-    ]
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "Necesito un poco más de contexto" in result["reply_text"]
 
 
 @pytest.mark.asyncio
-async def test_discuss_message_ignores_budget_ticket_title_when_message_is_general() -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
-    )
+async def test_discuss_message_routes_discard_but_still_uses_chat_agent() -> None:
+    orchestrator = _build_orchestrator()
 
     result = await orchestrator.handle_discuss_message(
         payload={
@@ -230,16 +209,111 @@ async def test_discuss_message_ignores_budget_ticket_title_when_message_is_gener
 
     assert result["ok"] is True
     assert result["route_name"] == "discard"
-    assert result["agent_name"] == GENERAL_AGENT_NAME
-    assert result["reply_text"] == GENERAL_AGENT_RESPONSE
-    assert budget_wrapper.create_sale_order_called is False
+    assert result["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "Hola. Para orientarte bien" in result["reply_text"]
+    assert result["actions"] == []
 
 
-def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None:
-    budget_wrapper = FakeBudgetOdooWrapper()
-    orchestrator = DiscussMessageOrchestrator(
-        budget_deps_builder=_build_budget_deps(budget_wrapper),
+@pytest.mark.asyncio
+async def test_discuss_message_routes_short_reply_to_briefer_discard_prompt() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 206,
+            "ticket_title": "Ayuda",
+            "channel_id": 11,
+            "channel_name": "Ticket 206 - Asistente Virtual",
+            "message_id": 16,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "mal",
+        }
     )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "discard"
+    assert "Necesito un poco más de detalle" in result["reply_text"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_marks_budget_ticket_ready_when_user_confirms_creation() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 204,
+            "ticket_title": "Presupuesto CRM",
+            "ticket_description": "Cliente interesado en CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
+            "channel_id": 9,
+            "channel_name": "Ticket 204 - Asistente Virtual",
+            "message_id": 14,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "Si.",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": "Tengo los datos principales. Quieres que preparemos el presupuesto?",
+                },
+                {"author_name": "Alejandro", "body": "Si."},
+            ],
+        },
+        thread_id="discuss-budget-confirmed",
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "budget"
+    assert result["reply_text"] == "Perfecto, marco el ticket como listo para la siguiente fase para generar el presupuesto."
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 204}]
+    assert "budget_creation_confirmed" in result["trace"]
+    assert "response_built:discuss_orchestrator" in result["trace"]
+
+
+@pytest.mark.asyncio
+async def test_discuss_message_marks_budget_ticket_ready_after_confirmation_prompt() -> None:
+    orchestrator = _build_orchestrator()
+
+    result = await orchestrator.handle_discuss_message(
+        payload={
+            "ticket_id": 205,
+            "ticket_title": "Presupuesto!!!!!",
+            "ticket_description": "Necesita un presupuesto CRM para mañana.",
+            "ticket_partner_name": "ACME",
+            "ticket_team": "Presupuestos",
+            "ticket_stage": "New",
+            "channel_id": 10,
+            "channel_name": "Ticket 205 - Asistente Virtual",
+            "message_id": 15,
+            "author_name": "Alejandro",
+            "author_email": "alejandro@empresa.com",
+            "body": "Sí",
+            "recent_messages": [
+                {
+                    "author_name": "Asistente Virtual",
+                    "body": (
+                        "Entiendo que necesitas un presupuesto CRM para mañana. "
+                        "¿Podrías confirmar si es correcto? Si es así, marcaré tu solicitud "
+                        "como 'Ready for next stage' y crearé el presupuesto correspondiente."
+                    ),
+                },
+                {"author_name": "Alejandro", "body": "Sí"},
+            ],
+        },
+        thread_id="discuss-budget-confirmed",
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "budget"
+    assert result["actions"] == [{"type": "mark_ticket_ready", "ticket_id": 205}]
+    assert "budget_creation_confirmed" in result["trace"]
+
+
+def test_assistant_discuss_message_api_accepts_ticket_context_and_history(monkeypatch) -> None:
+    orchestrator = _build_orchestrator()
     monkeypatch.setattr(api, "build_discuss_message_orchestrator", lambda: orchestrator)
 
     client = TestClient(api.app)
@@ -248,12 +322,20 @@ def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None
         json={
             "ticket_id": 202,
             "ticket_title": "Solicitud inicial",
+            "ticket_description": "Necesita valorar CRM.",
+            "ticket_partner_name": "ACME",
+            "ticket_partner_email": "cliente@acme.com",
+            "ticket_team": "Presupuestos",
+            "ticket_category": "Consulta presupuesto",
+            "ticket_type": "Presupuesto",
+            "ticket_stage": "New",
             "channel_id": 7,
             "channel_name": "Ticket 202 - Asistente Virtual",
             "message_id": 12,
             "author_name": "Alejandro",
             "author_email": "alejandro@empresa.com",
             "body": "Necesito presupuesto para CRM.",
+            "recent_messages": [{"author_name": "Alejandro", "body": "Necesito presupuesto para CRM."}],
             "thread_id": "discuss-api",
         },
     )
@@ -262,5 +344,6 @@ def test_assistant_discuss_message_api_returns_budget_reply(monkeypatch) -> None
     payload = response.json()
     assert payload["ok"] is True
     assert payload["route_name"] == "budget"
-    assert payload["agent_name"] == "budget_agent"
-    assert "Hola Alejandro," in payload["reply_text"]
+    assert payload["agent_name"] == ASSISTANT_CHAT_AGENT_NAME
+    assert "Si quieres que siga adelante" in payload["reply_text"]
+    assert payload["actions"] == []

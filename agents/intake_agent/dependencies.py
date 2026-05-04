@@ -1,24 +1,20 @@
-# agents/intake_agent/dependencies.py
 from dataclasses import dataclass
 
-from odoo.api_wrapper import OdooAPIWrapper
-from shared.config import ODOO_DB, ODOO_PASSWORD, ODOO_BASE_URL, ODOO_USERNAME
+from odoo.mcp_client import OdooMCPClient
+from shared.config import MODEL_INTAKE_AGENT
 from shared.llm import get_llm
 
 
 @dataclass
 class IntakeDependencies:
+    """Dependencias que usa el agente de intake."""
     llm: object
-    odoo_service: OdooAPIWrapper
+    odoo_mcp_client: OdooMCPClient
 
 
 def build_dependencies(model: str | None = None) -> IntakeDependencies:
+    """Construye las dependencias del agente."""
     return IntakeDependencies(
-        llm=get_llm(model=model),
-        odoo_service=OdooAPIWrapper(
-            url=ODOO_BASE_URL,
-            username=ODOO_USERNAME,
-            password=ODOO_PASSWORD,
-            db=ODOO_DB,
-        ),
+        llm=get_llm(model=model or MODEL_INTAKE_AGENT),
+        odoo_mcp_client=OdooMCPClient(),
     )
