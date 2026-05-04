@@ -72,6 +72,62 @@ class OdooAPI:
             f"No se pudo conectar con Odoo en {self._url} tras {self._login_retries} intentos."
         ) from last_error
 
+    def install(self, module_name: str) -> bool:
+        """
+        Installs an Odoo module by its technical name.
+        """
+        module_ids = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "ir.module.module",
+            "search",
+            [[["name", "=", module_name]]],
+        )
+
+        if not module_ids:
+            print(f"Module not found: {module_name}")
+            return False
+
+        module_data = self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "ir.module.module",
+            "read",
+            [module_ids, ["name", "state"]],
+        )
+
+        if module_data and module_data[0]["state"] == "installed":
+            print(f"Module already installed: {module_name}")
+            return True
+
+        self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "ir.module.module",
+            "button_immediate_install",
+            [module_ids],
+        )
+
+        return True
+    
+    def update_module_list(self) -> bool:
+        """
+        Updates the Odoo apps/module list.
+        Equivalent to clicking 'Update Apps List' in Odoo.
+        """
+        self._models.execute_kw(
+            self._db,
+            self._uid,
+            self._password,
+            "ir.module.module",
+            "update_list",
+            [],
+        )
+        return True
+    
     def _query(self, model: Table | str, method: str, args: list | None = None, kwargs: dict | None = None) -> Any:
         """Ejecuta un método ORM de Odoo."""
         return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args or [], kwargs or {})
