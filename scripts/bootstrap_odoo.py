@@ -1,7 +1,4 @@
-import time
 import os
-
-# from odoo.api_wrapper import OdooAPIWrapper
 from odoo.api import OdooAPI, Table
 from shared.config import ODOO_BASE_URL, ODOO_DB, ODOO_PASSWORD, ODOO_USERNAME
 
@@ -154,8 +151,8 @@ if __name__ == '__main__':
 
     print("\nInstalling modules...")
     for module in MODULES:
-        if odoo.install(module): print(f' - Installed {module}')
-        else: print(f' - {module} already installed')
+        if odoo.install(module): print(f' [+] Installed {module}')
+        else: print(f' [~] {module} already installed')
     odoo.update_module_list()
     
     print("\nSeeding products...")

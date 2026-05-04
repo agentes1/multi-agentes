@@ -27,107 +27,41 @@ class Table(StrEnum):
 class OdooAPI:
     """Cliente mínimo para trabajar con Odoo mediante XML-RPC."""
 
-    def __init__(
-        self,
-        url: str,
-        username: str,
-        password: str,
-        db: str,
-        login_retries: int = 12,
-        login_retry_delay: float = 2.0,
-    ):
-        self._url = self._normalize_url(url)
-        self._username, self._password, self._db = username, password, db
-        self._login_retries = login_retries
-        self._login_retry_delay = login_retry_delay
+    def __init__(self, url: str, username: str, password: str, db: str):
+        self._url = url
+        self._username = username
+        self._password = password
+        self._db = db
         self._uid = self._login()
-        self._models = xmlrpc.client.ServerProxy(f"{self._url}/xmlrpc/2/object")
+        self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
 
-    def _normalize_url(self, url: str) -> str:
-        """Normaliza la URL base de Odoo."""
-        return (url or "").rstrip("/").removesuffix("/xmlrpc/2")
+    def _login(self):
+        common = xmlrpc.client.ServerProxy(f'{self._url}/common')
+        uid = common.authenticate(self._db, self._username, self._password, {})
+        if not uid: raise RuntimeError('URL was correct, but credentials were wrong, don\'t give up you\'re close!')
+        return uid
 
-    def _login(self) -> int:
-        """Autentica el usuario y devuelve su UID."""
-        common = xmlrpc.client.ServerProxy(f"{self._url}/xmlrpc/2/common")
-        last_error: Exception | None = None
-        for attempt in range(1, self._login_retries + 1):
-            try:
-                uid = common.authenticate(self._db, self._username, self._password, {})
-                if not uid:
-                    raise RuntimeError("Credenciales incorrectas para Odoo.")
-                return uid
-            except RuntimeError:
-                raise
-            except Exception as error:
-                last_error = error
-                if attempt == self._login_retries:
-                    break
-                print(
-                    f"Odoo XML-RPC login failed on attempt {attempt}/{self._login_retries}: {error}. Retrying...",
-                    file=stderr,
-                )
-                time.sleep(self._login_retry_delay)
-
-        raise RuntimeError(
-            f"No se pudo conectar con Odoo en {self._url} tras {self._login_retries} intentos."
-        ) from last_error
 
     def install(self, module_name: str) -> bool:
         """
         Installs an Odoo module by its technical name.
         """
-        module_ids = self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "ir.module.module",
-            "search",
-            [[["name", "=", module_name]]],
-        )
+        module_ids = self._query('ir.module.module', 'search', [[['name', '=', module_name]]])
+        if not module_ids: return False # not found
 
-        if not module_ids:
-            print(f"Module not found: {module_name}")
-            return False
-
-        module_data = self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "ir.module.module",
-            "read",
-            [module_ids, ["name", "state"]],
-        )
-
+        module_data = self._query('ir.module.module', 'read', [module_ids, ['name', 'state']])
         if module_data and module_data[0]["state"] == "installed":
-            print(f"Module already installed: {module_name}")
-            return True
-
-        self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "ir.module.module",
-            "button_immediate_install",
-            [module_ids],
-        )
-
-        return True
+            return False # already installed
     
-    def update_module_list(self) -> bool:
+        self._query('ir.module.module', 'button_immediate_install', [module_ids])
+        return True
+
+    def update_module_list(self):
         """
         Updates the Odoo apps/module list.
         Equivalent to clicking 'Update Apps List' in Odoo.
         """
-        self._models.execute_kw(
-            self._db,
-            self._uid,
-            self._password,
-            "ir.module.module",
-            "update_list",
-            [],
-        )
-        return True
+        self._query('ir.module.module', 'update_list')
     
     def _query(self, model: Table | str, method: str, args: list | None = None, kwargs: dict | None = None) -> Any:
         """Ejecuta un método ORM de Odoo."""
@@ -148,8 +82,13 @@ class OdooAPI:
         return results or None
 
     def get_by_value(
-        self, table: Table, criteria: dict[str, Any], fields: list[str] | None = None,
-        exact: bool = False, OR: bool = False, limit: int = 1000,
+        self, 
+        table: Table, 
+        criteria: dict[str, Any], 
+        fields: list[str] | None = None,
+        exact: bool = False, 
+        OR: bool = False, 
+        limit: int = 1000,
     ) -> list[dict] | None:
         """Busca registros por uno o varios campos."""
         operator = "=" if exact else "ilike"
