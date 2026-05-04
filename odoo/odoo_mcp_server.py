@@ -28,6 +28,25 @@ def first(items: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     return items[0] if items else None
 
 
+def get_virtual_assistant_partner_id() -> int | None:
+    """Obtiene el partner_id del usuario Asistente Virtual si existe."""
+    user = first(
+        odoo.get_by_value(
+            Table.User,
+            {"name": "Asistente Virtual"},
+            ["id", "name", "partner_id"],
+            exact=True,
+            limit=1,
+        )
+    )
+    partner = (user or {}).get("partner_id")
+    if isinstance(partner, (list, tuple)) and partner:
+        return int(partner[0])
+    if isinstance(partner, int):
+        return partner
+    return None
+
+
 @mcp.tool()
 def list_catalog() -> dict[str, Any]:
     """Devuelve el catálogo presupuestable agrupado por código interno."""
@@ -132,6 +151,67 @@ def get_customer_history(partner_id: int, limit: int = 10) -> dict[str, Any]:
 
 
 @mcp.tool()
+def find_crm_opportunity_by_source_ticket(ticket_id: int) -> dict[str, Any] | None:
+    """Busca una oportunidad de CRM creada previamente desde un ticket."""
+    marker = f"[source_ticket_id:{ticket_id}]"
+    return first(
+        odoo.search_read(
+            Table.Lead,
+            [("type", "=", "opportunity"), ("description", "ilike", marker)],
+            ["id", "name", "partner_id", "email_from", "description", "type"],
+            limit=1,
+        )
+    )
+
+
+@mcp.tool()
+def create_crm_opportunity(
+    title: str,
+    description: str,
+    partner_id: int | None = None,
+    partner_name: str | None = None,
+    partner_email: str | None = None,
+    source_ticket_id: int | None = None,
+    priority: str | None = None,
+) -> int:
+    """Crea una oportunidad comercial en CRM."""
+    marker = f"[source_ticket_id:{source_ticket_id}]" if source_ticket_id else ""
+    full_description = "\n\n".join(part for part in [marker, description] if part)
+
+    values: dict[str, Any] = {
+        "name": title or "Oportunidad comercial",
+        "type": "opportunity",
+        "description": full_description,
+    }
+    if partner_id:
+        values["partner_id"] = partner_id
+    if partner_name:
+        values["contact_name"] = partner_name
+        values["partner_name"] = partner_name
+    if partner_email:
+        values["email_from"] = partner_email
+    if priority:
+        values["priority"] = priority
+
+    ids = odoo.create(Table.Lead, [values])
+    if not ids:
+        raise RuntimeError("No se pudo crear la oportunidad comercial en CRM.")
+    return ids[0]
+
+
+@mcp.tool()
+def get_crm_opportunity(opportunity_id: int) -> dict[str, Any] | None:
+    """Lee una oportunidad comercial de CRM."""
+    return first(
+        odoo.get_by_id(
+            Table.Lead,
+            [opportunity_id],
+            ["id", "name", "partner_id", "email_from", "description", "type", "stage_id"],
+        )
+    )
+
+
+@mcp.tool()
 def find_sale_order_by_client_ref(client_order_ref: str) -> dict[str, Any] | None:
     """Busca un presupuesto por referencia externa."""
     return first(odoo.search_read(
@@ -233,9 +313,18 @@ def create_helpdesk_ticket(
 @mcp.tool()
 def post_message_to_ticket(ticket_id: int, body: str) -> bool:
     """Publica una respuesta en el chatter del ticket."""
+    kwargs: dict[str, Any] = {
+        "body": body,
+        "message_type": "comment",
+        "subtype_xmlid": "mail.mt_comment",
+    }
+    assistant_partner_id = get_virtual_assistant_partner_id()
+    if assistant_partner_id:
+        kwargs["author_id"] = assistant_partner_id
+
     result = odoo._query(
         Table.Ticket, "message_post", [[ticket_id]],
-        {"body": body, "message_type": "comment", "subtype_xmlid": "mail.mt_comment"},
+        kwargs,
     )
     return bool(result)
 

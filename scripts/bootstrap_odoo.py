@@ -143,6 +143,7 @@ ASSISTANT_USER = {
 SYSTEM_PARAMETERS = {
     "helpdesk_virtual_assistant.backend_ticket_entry_url": "http://assistant-backend:8000/assistant/ticket-entry",
     "helpdesk_virtual_assistant.backend_discuss_message_url": "http://assistant-backend:8000/assistant/discuss-message",
+    "helpdesk_virtual_assistant.backend_sales_from_ticket_url": "http://assistant-backend:8000/assistant/sales-from-ticket",
     "mail_inbox_input.backend_incoming_email_url": "http://assistant-backend:8000/assistant/incoming-email",
 }
 

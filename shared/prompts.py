@@ -70,6 +70,40 @@ ANSWER_BOT_PROMPT = (
     "Si hay productos relacionados, puedes sugerirlos de forma opcional y prudente."
 )
 
+# sales agent
+
+SALES_TICKET_EXTRACTION_PROMPT = """
+Extrae la información comercial necesaria para crear una oportunidad CRM desde este ticket.
+
+Devuelve solo JSON válido con esta estructura:
+{{
+  "company_name": "string",
+  "sales_summary": "string",
+  "commercial_goals": ["string"],
+  "next_step": "string"
+}}
+
+Reglas:
+- No inventes datos.
+- company_name debe salir del ticket, del cliente informado o del email.
+- commercial_goals debe contener objetivos comerciales concretos, como pipeline, leads, oportunidades, seguimiento o automatización comercial.
+- next_step debe ser una frase breve y útil para orientar la oportunidad en CRM.
+- Devuelve solo JSON válido.
+
+Contenido del ticket:
+{ticket_text}
+"""
+
+SALES_REPLY_PROMPT = """
+Cliente: {company_name}
+Resumen comercial: {sales_summary}
+Objetivos comerciales detectados: {commercial_goals}
+Siguiente paso sugerido: {next_step}
+Oportunidad CRM: {crm_summary}
+
+Escribe una respuesta final breve para informar de que la oportunidad comercial se ha creado y del siguiente paso recomendado.
+"""
+
 # general agent
 
 GENERAL_AGENT_SYSTEM_PROMPT = (

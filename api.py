@@ -22,6 +22,7 @@ from orchestration.assistant_discuss import build_discuss_message_orchestrator
 from orchestration.assistant_budget import build_budget_from_ticket_orchestrator
 from orchestration.assistant_email import build_incoming_email_orchestrator
 from orchestration.assistant_entry import build_ticket_entry_orchestrator
+from orchestration.assistant_sales import build_sales_from_ticket_orchestrator
 
 app = FastAPI(title="Multi-agente presupuestos")
 
@@ -135,6 +136,26 @@ class AssistantBudgetFromTicketResponse(BaseModel):
     trace: list[str] = Field(default_factory=list)
 
 
+class AssistantSalesFromTicketRequest(BaseModel):
+    ticket_id: int | None = None
+    title: str = ""
+    description: str = ""
+    partner_id: int | None = None
+    partner_name: str = ""
+    partner_email: str = ""
+    thread_id: str | None = None
+
+
+class AssistantSalesFromTicketResponse(BaseModel):
+    ok: bool
+    agent_name: str | None = None
+    reply_text: str = ""
+    crm_lead_id: int | None = None
+    crm_summary: dict = Field(default_factory=dict)
+    error: str | None = None
+    trace: list[str] = Field(default_factory=list)
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post("/assistant/ticket-entry", response_model=AssistantTicketEntryResponse)
@@ -239,6 +260,31 @@ async def assistant_budget_from_ticket(request: AssistantBudgetFromTicketRequest
         result = await build_budget_from_ticket_orchestrator().handle_budget_from_ticket(
             ticket=ticket,
             thread_id=request.thread_id or f"odoo-ticket-budget-{request.ticket_id}",
+        )
+        if not result["ok"]:
+            raise HTTPException(status_code=400, detail=result)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/assistant/sales-from-ticket", response_model=AssistantSalesFromTicketResponse)
+async def assistant_sales_from_ticket(request: AssistantSalesFromTicketRequest):
+    try:
+        ticket = {
+            "id": request.ticket_id,
+            "name": request.title,
+            "description": request.description,
+            "partner_id": request.partner_id,
+            "partner_name": request.partner_name,
+            "partner_email": request.partner_email,
+        }
+        result = await build_sales_from_ticket_orchestrator().handle_sales_from_ticket(
+            ticket=ticket,
+            thread_id=request.thread_id or f"odoo-ticket-sales-{request.ticket_id}",
         )
         if not result["ok"]:
             raise HTTPException(status_code=400, detail=result)

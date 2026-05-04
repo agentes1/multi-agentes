@@ -36,10 +36,6 @@ def _build_system_prompt(route_name: str) -> str:
             "Responde de forma breve que marcaras el ticket como listo para que se genere el presupuesto. "
             "No inventes importes ni condiciones comerciales."
         ),
-        "issue": (
-            "La intencion es soporte/incidencia. Da pasos de diagnostico utiles, pide datos concretos "
-            "si faltan y mantente dentro del contexto del ticket."
-        ),
         "discard": (
             "La intencion no esta clara o es general. Responde de forma amable, pide aclaracion y "
             "orienta al usuario hacia una solicitud de soporte o presupuesto si procede."

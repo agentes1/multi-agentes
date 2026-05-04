@@ -4,7 +4,8 @@ from langchain_core.messages import AIMessage
 
 from agents.budget_agent.dependencies import BudgetDependencies
 from agents.budget_agent.tools import BudgetAgentTools
-from agents.general_agent.service import GENERAL_AGENT_NAME, GENERAL_AGENT_RESPONSE
+from agents.general_agent.service import GENERAL_AGENT_NAME
+from agents.sales_agent.service import SALES_AGENT_NAME
 import api
 from orchestration.assistant_budget import BudgetFromTicketOrchestrator
 from orchestration.assistant_entry import TicketEntryOrchestrator
@@ -66,7 +67,7 @@ class FakeOdooMCPClient:
     def list_catalog(self):
         return self.wrapper.list_catalog()
 
-    def get_or_create_contact(self, company_name: str):
+    def get_or_create_contact(self, company_name: str, email: str | None = None):
         return self.wrapper.get_or_create_contact(company_name)
 
     def find_sale_order_by_client_ref(self, client_order_ref: str):
@@ -120,19 +121,23 @@ class FakeOdooMCPClient:
 
 
 class FakeBudgetLLM:
+    def __init__(self):
+        self.call_count = 0
+
     async def ainvoke(self, messages):
+        self.call_count += 1
         prompt = messages[-1].content
-        if "Devuelve solo JSON" in prompt:
-            if "product_ids" in prompt:
-                return AIMessage(
-                    content='{"product_ids": [11, 22], "unmatched_requirements": []}'
-                )
+        if self.call_count == 1:
             return AIMessage(
                 content=(
                     '{"company_name": "Alejandro", '
                     '"project_summary": "Solicitud presupuesto CRM", '
                     '"requirements": ["crm", "automatizacion comercial"]}'
                 )
+            )
+        if self.call_count == 2:
+            return AIMessage(
+                content='{"product_ids": [11, 22], "unmatched_requirements": []}'
             )
         return AIMessage(
             content=(
@@ -148,10 +153,11 @@ class FakeBudgetLLM:
 
 def _build_budget_deps(wrapper: FakeBudgetOdooWrapper):
     def _builder(model: str | None = None) -> BudgetDependencies:
+        mcp_client = FakeOdooMCPClient(wrapper)
         return BudgetDependencies(
             llm=FakeBudgetLLM(),
-            odoo_wrapper=wrapper,
-            tools=BudgetAgentTools(mcp_client=FakeOdooMCPClient(wrapper)),
+            odoo_mcp_client=mcp_client,
+            tools=BudgetAgentTools(mcp_client=mcp_client),
         )
 
     return _builder
@@ -176,6 +182,7 @@ async def test_ticket_entry_routes_budget_and_returns_reply() -> None:
     assert result["ok"] is True
     assert result["route_name"] == "budget"
     assert result["agent_name"] is None
+    assert "solicitud de presupuesto" in result["reply_text"]
     assert "Ready for next stage" in result["reply_text"]
     assert result["quote_summary"] == {}
     assert budget_wrapper.create_sale_order_called is False
@@ -205,8 +212,34 @@ async def test_ticket_entry_prioritizes_budget_over_greeting() -> None:
     assert result["ok"] is True
     assert result["route_name"] == "budget"
     assert result["agent_name"] is None
-    assert "Ready for next stage" in result["reply_text"]
+    assert "solicitud de presupuesto" in result["reply_text"]
     assert budget_wrapper.create_sale_order_called is False
+
+
+@pytest.mark.asyncio
+async def test_ticket_entry_routes_sales_and_returns_sales_reply() -> None:
+    orchestrator = TicketEntryOrchestrator()
+
+    result = await orchestrator.handle_ticket_entry(
+        ticket={
+            "id": 150,
+            "name": "Organizar pipeline comercial",
+            "description": "Queremos mejorar oportunidades, pipeline de ventas y seguimiento comercial.",
+            "partner_name": "Alejandro",
+            "partner_email": "alejandro@empresa.com",
+        },
+        thread_id="entry-sales",
+    )
+
+    assert result["ok"] is True
+    assert result["route_name"] == "sales"
+    assert result["agent_name"] == SALES_AGENT_NAME
+    assert "solicitud comercial" in result["reply_text"]
+    assert result["trace"] == [
+        "ticket_received",
+        "route_decided:sales",
+        "agent_completed:sales_agent",
+    ]
 
 
 @pytest.mark.asyncio
@@ -257,7 +290,7 @@ async def test_ticket_entry_routes_discard_and_returns_fixed_reply() -> None:
     assert result["ok"] is True
     assert result["route_name"] == "discard"
     assert result["agent_name"] == GENERAL_AGENT_NAME
-    assert result["reply_text"] == GENERAL_AGENT_RESPONSE
+    assert "He recibido tu solicitud" in result["reply_text"]
     assert result["quote_summary"] == {}
     assert budget_wrapper.create_sale_order_called is False
     assert result["trace"] == [
@@ -290,4 +323,4 @@ def test_assistant_ticket_entry_api_returns_fallback_reply(monkeypatch) -> None:
     assert payload["ok"] is True
     assert payload["route_name"] == "discard"
     assert payload["agent_name"] == GENERAL_AGENT_NAME
-    assert payload["reply_text"] == GENERAL_AGENT_RESPONSE
+    assert "He recibido tu solicitud" in payload["reply_text"]

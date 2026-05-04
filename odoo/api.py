@@ -11,6 +11,7 @@ class Table(StrEnum):
     Product = "product.product"
     Contact = "res.partner"
     User = "res.users"
+    Lead = "crm.lead"
     Ticket = "helpdesk.ticket"
     TicketType = "helpdesk.ticket.type"
     TicketTeam = "helpdesk.ticket.team"

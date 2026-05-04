@@ -9,7 +9,6 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 load_dotenv(ROOT_DIR / "shared" / ".env", override=False)
 
-
 def _env(name: str) -> str | None:
     """Lee variable de entorno limpiando espacios y comillas."""
     value = os.getenv(name)
@@ -26,6 +25,8 @@ PASSWORD = _env("PASSWORD")
 OLLAMA_MODEL = _env("OLLAMA_MODEL")
 OLLAMA_TEMPERATURE = _env("OLLAMA_TEMPERATURE")
 OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL")
+ROUTER_EMBEDDINGS_ENABLED = _env("ROUTER_EMBEDDINGS_ENABLED") or "false"
+ROUTER_EMBED_MODEL = _env("ROUTER_EMBED_MODEL")
 
 # Odoo (ERP real)
 ODOO_BASE_URL = _env("ODOO_BASE_URL")
@@ -40,3 +41,4 @@ MODEL_INTAKE_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
 MODEL_DISCUSS_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
 MODEL_ENTRY_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
 MODEL_GENERAL_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL
+MODEL_SALES_AGENT = OLLAMA_MODEL_OVERRIDE or OLLAMA_MODEL

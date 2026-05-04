@@ -8,6 +8,15 @@ from agents.budget_agent.schemas import BudgetCreateSchema
 from agents.budget_agent.state import BudgetState
 from shared.prompts import ANSWER_BOT_PROMPT, BUDGET_PRODUCT_SELECTION_PROMPT, BUDGET_REPLY_PROMPT, BUDGET_TICKET_EXTRACTION_PROMPT
 
+_REQUIREMENT_RULES = {
+    "crm": ("crm", "ventas", "pipeline", "lead", "oportunidad", "seguimiento comercial"),
+    "automatizacion comercial": ("automatizacion", "automatización", "seguimiento", "automatizar", "workflow"),
+    "formacion": ("formacion", "formación", "capacitar", "capacitacion", "capacitación"),
+    "soporte mensual": ("soporte", "mantenimiento", "mensual"),
+    "helpdesk": ("helpdesk", "ticket", "incidencia", "soporte tecnico", "soporte técnico"),
+    "desarrollo": ("desarrollo", "personalizacion", "personalización", "integracion", "integración"),
+}
+
 
 def get_deps(config: RunnableConfig) -> BudgetDependencies:
     deps = config.get("configurable", {}).get("deps")
@@ -33,6 +42,34 @@ def ticket_to_text(ticket: dict) -> str:
         "partner_id": ticket.get("partner_id"),
     }
     return "\n".join(f"{key}: {value}" for key, value in fields.items() if value)
+
+
+def _normalize(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value or "").lower()).strip()
+
+
+def heuristic_extract_request(ticket: dict, ticket_text: str) -> dict:
+    normalized_text = _normalize(ticket_text)
+    requirements = [
+        requirement
+        for requirement, terms in _REQUIREMENT_RULES.items()
+        if any(term in normalized_text for term in terms)
+    ]
+    if not requirements and "odoo" in normalized_text:
+        requirements.append("crm")
+
+    company_name = (
+        str(ticket.get("partner_name") or "").strip()
+        or str(ticket.get("company_name") or "").strip()
+        or "Cliente"
+    )
+    summary = str(ticket.get("name") or ticket.get("subject") or "").strip() or "Solicitud de presupuesto"
+
+    return {
+        "company_name": company_name,
+        "project_summary": summary,
+        "requirements": requirements,
+    }
 
 
 def get_ticket_text(state: BudgetState) -> str:
@@ -85,6 +122,56 @@ async def select_products(llm, request: dict, catalog: list[dict]) -> tuple[list
     return selected_products, unmatched
 
 
+def heuristic_select_products(request: dict, catalog: list[dict]) -> tuple[list[dict], list[str]]:
+    selected_products = []
+    unmatched = []
+    seen_ids = set()
+
+    for requirement in request.get("requirements") or []:
+        normalized_requirement = _normalize(requirement)
+        product = next(
+            (
+                item
+                for item in catalog
+                if normalized_requirement in _normalize(item.get("name"))
+                or normalized_requirement in _normalize(item.get("description"))
+                or normalized_requirement in _normalize(item.get("default_code"))
+            ),
+            None,
+        )
+
+        if not product and normalized_requirement in {"automatizacion comercial", "crm"}:
+            product = next(
+                (
+                    item
+                    for item in catalog
+                    if "crm" in _normalize(item.get("name"))
+                    or "automat" in _normalize(item.get("name"))
+                    or "comercial" in _normalize(item.get("name"))
+                ),
+                None,
+            )
+        if not product and normalized_requirement == "formacion":
+            product = next(
+                (
+                    item
+                    for item in catalog
+                    if "form" in _normalize(item.get("name"))
+                    or "capacit" in _normalize(item.get("description"))
+                ),
+                None,
+            )
+
+        if product:
+            if product["id"] not in seen_ids:
+                selected_products.append(product)
+                seen_ids.add(product["id"])
+        else:
+            unmatched.append(str(requirement))
+
+    return selected_products, unmatched
+
+
 async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dict:
     deps = get_deps(config)
     tools = deps.tools
@@ -95,7 +182,9 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
         return {"error": "No se recibió contenido del ticket.", "selected_products": []}
 
     try:
-        request = state.get("normalized_request") or await extract_request(deps.llm, ticket_text)
+        request = state.get("normalized_request") or heuristic_extract_request(ticket, ticket_text)
+        if not (request.get("requirements") or []):
+            request = await extract_request(deps.llm, ticket_text)
     except Exception as exc:
         return {"error": f"No se pudieron extraer los datos del ticket: {exc}", "selected_products": []}
 
@@ -116,7 +205,9 @@ async def prepare_budget_node(state: BudgetState, config: RunnableConfig) -> dic
         if not catalog:
             return {"error": "No hay productos disponibles en Odoo.", "selected_products": []}
 
-        selected_products, unmatched = await select_products(deps.llm, request, catalog)
+        selected_products, unmatched = heuristic_select_products(request, catalog)
+        if not selected_products:
+            selected_products, unmatched = await select_products(deps.llm, request, catalog)
     except Exception as exc:
         return {"error": f"Error preparando el presupuesto: {exc}", "selected_products": []}
 
@@ -172,6 +263,7 @@ async def create_odoo_quote_node(state: BudgetState, config: RunnableConfig) -> 
         "company_name": budget.company_name,
         "partner_id": budget.partner_id,
         "sale_order_id": sale_order_id,
+        "sale_order_name": sale_order.get("name"),
         "client_order_ref": client_order_ref,
         "selected_products": [{"id": p["id"], "name": p.get("name", ""), "default_code": p.get("default_code", "")} for p in budget.selected_products],
         "order_lines": order_lines,
@@ -205,30 +297,19 @@ async def compose_budget_reply_node(state: BudgetState, config: RunnableConfig) 
     except Exception:
         customer_profile, catalog_snapshot, related_products = {}, [], []
 
-    prompt = BUDGET_REPLY_PROMPT.format(
-        company_name=company_name,
-        project_summary=request.get("project_summary") or "Sin resumen adicional",
-        product_names=", ".join(product_names) or "No disponible",
-        customer_profile=customer_profile,
-        catalog_snapshot=catalog_snapshot,
-        order_lines=quote.get("order_lines") or [],
-        sale_order_id=quote.get("sale_order_id"),
-        total=quote.get("total") or 0,
-        currency=quote.get("currency") or "EUR",
-        related_products=related_products or "Ninguno",
-        unmatched_requirements=", ".join(state.get("unmatched_requirements") or []) or "Ninguno",
+    reply_text = (
+        f"He creado un presupuesto inicial para {company_name}. "
+        f"Referencia: {quote.get('sale_order_name') or quote.get('sale_order_id')}. "
+        f"Total estimado: {quote.get('total', 0)} {quote.get('currency', 'EUR')}. "
+        f"Servicios incluidos: {', '.join(product_names) or 'No disponible'}."
     )
-
-    try:
-        response = await deps.llm.ainvoke([SystemMessage(content=ANSWER_BOT_PROMPT), HumanMessage(content=prompt)])
-        reply_text = str(response.content or "").strip()
-    except Exception:
-        reply_text = (
-            f"Hola {company_name},\n\n"
-            f"He preparado un presupuesto inicial en Odoo.\n"
-            f"Referencia: {quote.get('sale_order_id')}\n"
-            f"Total estimado: {quote.get('total', 0)} {quote.get('currency', 'EUR')}"
-        )
+    if related_products:
+        suggested = ", ".join(item.get("name", "") for item in related_products if item.get("name"))
+        if suggested:
+            reply_text += f" Como sugerencia adicional, también podríamos valorar: {suggested}."
+    unmatched = ", ".join(state.get("unmatched_requirements") or [])
+    if unmatched:
+        reply_text += f" Quedan por concretar estos puntos: {unmatched}."
 
     ticket_id = state.get("source_ticket_id")
     if ticket_id and reply_text:

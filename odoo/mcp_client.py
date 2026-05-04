@@ -48,6 +48,36 @@ class OdooMCPClient:
         """Obtiene historial reciente de pedidos y tickets."""
         return odoo_mcp_server.get_customer_history(partner_id=partner_id, limit=limit)
 
+    # CRM / Ventas
+    def find_crm_opportunity_by_source_ticket(self, ticket_id: int) -> dict | None:
+        """Busca una oportunidad creada desde un ticket concreto."""
+        return odoo_mcp_server.find_crm_opportunity_by_source_ticket(ticket_id=ticket_id)
+
+    def create_crm_opportunity(
+        self,
+        title: str,
+        description: str,
+        partner_id: int | None = None,
+        partner_name: str | None = None,
+        partner_email: str | None = None,
+        source_ticket_id: int | None = None,
+        priority: str | None = None,
+    ) -> int:
+        """Crea una oportunidad comercial en CRM."""
+        return odoo_mcp_server.create_crm_opportunity(
+            title=title,
+            description=description,
+            partner_id=partner_id,
+            partner_name=partner_name,
+            partner_email=partner_email,
+            source_ticket_id=source_ticket_id,
+            priority=priority,
+        )
+
+    def get_crm_opportunity(self, opportunity_id: int) -> dict | None:
+        """Lee una oportunidad comercial por ID."""
+        return odoo_mcp_server.get_crm_opportunity(opportunity_id=opportunity_id)
+
     # Presupuestos
     def find_sale_order_by_client_ref(self, client_order_ref: str) -> dict | None:
         """Busca un presupuesto por referencia externa."""

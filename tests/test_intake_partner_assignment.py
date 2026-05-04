@@ -17,30 +17,28 @@ class FakeLLM:
         return AIMessage(content=self.responses.pop(0))
 
 
-class FakeOdooService:
+class FakeOdooMCPClient:
     def __init__(self, companies=None):
         self.companies = companies or []
         self.created_ticket_kwargs = None
 
-    def search_read(self, model, domain, fields=None, limit=100):
-        if model == "res.partner":
-            return self.companies
-        return []
+    def find_company(self, name, exact=False, limit=20):
+        return self.companies[:limit]
 
-    def get_team_id_by_name(self, name):
-        return 10
+    def get_customer_history(self, company_id):
+        return {"orders": [], "tickets": []}
 
-    def get_ticket_type_id_by_name(self, name):
-        return 20
+    def find_helpdesk_team(self, name):
+        return {"id": 10, "name": name}
 
-    def get_category_id_by_name(self, name):
-        return 30
+    def find_ticket_type(self, name):
+        return {"id": 20, "name": name}
 
-    def get_tag_ids_by_names(self, tag_names):
+    def find_ticket_category(self, name):
+        return {"id": 30, "name": name}
+
+    def find_ticket_tags(self, tag_names):
         return list(range(1, len(tag_names) + 1))
-
-    def get_motive_id_by_name_and_team(self, motive_name, team_id):
-        return None
 
     def create_helpdesk_ticket(self, **kwargs):
         self.created_ticket_kwargs = kwargs
@@ -48,9 +46,9 @@ class FakeOdooService:
 
 
 class FakeDeps:
-    def __init__(self, llm, odoo_service):
+    def __init__(self, llm, odoo_mcp_client):
         self.llm = llm
-        self.odoo_service = odoo_service
+        self.odoo_mcp_client = odoo_mcp_client
 
 
 def make_config(deps):
@@ -75,14 +73,14 @@ async def test_ticket_uses_company_as_partner_when_company_matches():
         json.dumps({"company_id": 7}),
     ])
 
-    odoo = FakeOdooService(
+    odoo = FakeOdooMCPClient(
         companies=[
             {"id": 7, "name": "ACME S.L."},
             {"id": 8, "name": "Otra Empresa"},
         ]
     )
 
-    deps = FakeDeps(llm=llm, odoo_service=odoo)
+    deps = FakeDeps(llm=llm, odoo_mcp_client=odoo)
 
     state = {
         "normalized_request": {
@@ -139,14 +137,14 @@ async def test_ticket_has_no_partner_and_cliente_nuevo_when_company_does_not_mat
         json.dumps({"company_id": None}),
     ])
 
-    odoo = FakeOdooService(
+    odoo = FakeOdooMCPClient(
         companies=[
             {"id": 7, "name": "ACME S.L."},
             {"id": 8, "name": "Otra Empresa"},
         ]
     )
 
-    deps = FakeDeps(llm=llm, odoo_service=odoo)
+    deps = FakeDeps(llm=llm, odoo_mcp_client=odoo)
 
     state = {
         "normalized_request": {
@@ -186,7 +184,4 @@ async def test_ticket_has_no_partner_and_cliente_nuevo_when_company_does_not_mat
     assert odoo.created_ticket_kwargs is not None
     assert odoo.created_ticket_kwargs["partner_id"] is None
 
-    assert any(
-        "no se asoció ninguna compañía existente" in warning
-        for warning in created["warnings"]
-    )
+    assert created["warnings"] == ["Empresa 'Empresa Nueva' no asociada"]

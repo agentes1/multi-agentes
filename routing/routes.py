@@ -53,38 +53,32 @@ budget_route = RouteDefinition(
     ),
 )
 
-
-issue_route = RouteDefinition(
-    name="issue",
+sales_route = RouteDefinition(
+    name="sales",
     utterances=(
-        "tengo un error al usar odoo",
-        "no funciona el crm",
-        "hay una incidencia con facturacion",
-        "la pantalla se queda bloqueada",
-        "necesito ayuda con un problema tecnico",
-        "me aparece un fallo al crear un pedido",
-        "el sistema da error al guardar",
-        "no puedo acceder al modulo",
-        "tenemos un bug en ventas",
-        "la integracion ha dejado de funcionar",
+        "queremos mejorar el proceso comercial",
+        "necesitamos organizar oportunidades de venta",
+        "buscamos una solucion para seguimiento comercial",
+        "queremos automatizar el seguimiento de leads",
+        "necesitamos mejorar el pipeline de ventas",
+        "queremos centralizar la gestion comercial del equipo",
+        "buscamos mejorar la captacion y conversion de clientes",
+        "queremos ayuda para ordenar el area de ventas",
     ),
     keywords=(
-        "error",
-        "problema",
-        "incidencia",
-        "falla",
-        "fallo",
-        "bug",
-        "no funciona",
-        "bloqueado",
-        "bloquea",
-        "no puedo",
-        "ayuda",
-        "soporte",
-        "acceder",
-        "guardar",
-        "integracion",
-        "integraciÃ³n",
+        "ventas",
+        "comercial",
+        "pipeline",
+        "lead",
+        "leads",
+        "oportunidades",
+        "seguimiento comercial",
+        "captacion",
+        "captación",
+        "conversion",
+        "conversión",
+        "equipo comercial",
+        "crm comercial",
     ),
 )
 
@@ -121,4 +115,4 @@ discard_route = RouteDefinition(
     threshold=0.0,
 )
 
-routes = (budget_route, issue_route, discard_route)
+routes = (budget_route, sales_route, discard_route)
