@@ -14,6 +14,13 @@ class HelpdeskTicket(models.Model):
     # Este archivo solo se ocupa del arranque del flujo: abrir chat y pedir primera respuesta.
     _inherit = "helpdesk.ticket"
 
+    assistant_channel_id = fields.Many2one(
+        comodel_name="discuss.channel",
+        string="Assistant Discuss Channel",
+        copy=False,
+        readonly=True,
+    )
+
     @api.model_create_multi
     def create(self, vals_list):
         tickets = super().create(vals_list)
@@ -56,11 +63,14 @@ class HelpdeskTicket(models.Model):
         channel_name = f"Ticket {self.id} - Asistente Virtual"
         channel_model = self.env["discuss.channel"].sudo()
 
-        # Se reutiliza el chat si ya existe para evitar duplicados al recrear o editar datos.
-        channel = channel_model.search(
-            [("name", "=", channel_name)],
-            limit=1,
-        )
+        # La apertura del chat debe ser idempotente para evitar duplicados si Odoo
+        # dispara el flujo de creacion del ticket mas de una vez.
+        channel = self.assistant_channel_id.sudo().exists()
+        if not channel:
+            channel = channel_model.search(
+                [("name", "=", channel_name)],
+                limit=1,
+            )
         if not channel:
             create_vals = {
                 "name": channel_name,
@@ -73,6 +83,9 @@ class HelpdeskTicket(models.Model):
                 create_vals["channel_partner_ids"] = partner_commands
 
             channel = channel_model.create(create_vals)
+
+        if self.assistant_channel_id != channel:
+            self.sudo().write({"assistant_channel_id": channel.id})
 
         # Primer mensaje fijo: confirma recepción antes de consultar al semantic router.
         initial_message = self._build_virtual_assistant_message()

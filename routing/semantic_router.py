@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+import math
 import re
 import unicodedata
 
+from langchain_ollama import OllamaEmbeddings
+
 from routing.routes import RouteDefinition, discard_route, routes
+from shared.config import (
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    ROUTER_EMBED_MODEL,
+    ROUTER_EMBEDDINGS_ENABLED,
+)
 
 _STOPWORDS = {
     "a",
@@ -81,6 +90,22 @@ class RouteMatch:
     utterance: str | None = None
 
 
+def _env_flag(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
 def _strip_accents(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     return "".join(char for char in normalized if not unicodedata.combining(char))
@@ -102,8 +127,19 @@ def _tokenize(value: str) -> set[str]:
 
 
 class SemanticTicketRouter:
-    def __init__(self, route_definitions: tuple[RouteDefinition, ...]):
+    def __init__(
+        self,
+        route_definitions: tuple[RouteDefinition, ...],
+        embeddings_client: OllamaEmbeddings | None = None,
+        embeddings_enabled: bool | None = None,
+    ):
         self._routes = route_definitions
+        self._embeddings_enabled = (
+            _env_flag(ROUTER_EMBEDDINGS_ENABLED) if embeddings_enabled is None else embeddings_enabled
+        )
+        self._embeddings_client = embeddings_client
+        self._route_embeddings: dict[str, list[tuple[str, list[float]]]] = {}
+        self._embedding_failed = False
 
     def __call__(self, text: str) -> RouteMatch:
         normalized_text = _normalize_text(text)
@@ -180,7 +216,14 @@ class SemanticTicketRouter:
                 best_utterance_score = utterance_score
                 best_utterance = utterance
 
-        score = round((best_utterance_score * 0.75) + (keyword_score * 0.25), 4)
+        embedding_score, embedding_utterance = self._score_route_embeddings(route, normalized_text)
+        if embedding_score > best_utterance_score and embedding_utterance:
+            best_utterance = embedding_utterance
+
+        score = round(
+            (best_utterance_score * 0.55) + (keyword_score * 0.20) + (embedding_score * 0.25),
+            4,
+        )
         return RouteMatch(name=route.name, score=score, utterance=best_utterance)
 
     @staticmethod
@@ -194,6 +237,49 @@ class SemanticTicketRouter:
         sequence = SequenceMatcher(None, normalized_text, normalized_utterance).ratio()
         contains_bonus = 1.0 if normalized_utterance in normalized_text else 0.0
         return max(overlap, (overlap * 0.6) + (sequence * 0.4), contains_bonus)
+
+    def _score_route_embeddings(self, route: RouteDefinition, normalized_text: str) -> tuple[float, str | None]:
+        if not self._embeddings_enabled or self._embedding_failed or not normalized_text:
+            return 0.0, None
+
+        try:
+            client = self._get_embeddings_client()
+            if client is None:
+                return 0.0, None
+
+            if route.name not in self._route_embeddings:
+                utterance_vectors = client.embed_documents([_normalize_text(item) for item in route.utterances])
+                self._route_embeddings[route.name] = list(zip(route.utterances, utterance_vectors))
+
+            text_vector = client.embed_query(normalized_text)
+        except Exception:
+            self._embedding_failed = True
+            return 0.0, None
+
+        best_score = 0.0
+        best_utterance = None
+        for utterance, utterance_vector in self._route_embeddings.get(route.name, []):
+            similarity = _cosine_similarity(text_vector, utterance_vector)
+            normalized_similarity = max(0.0, min(1.0, (similarity + 1.0) / 2.0))
+            if normalized_similarity > best_score:
+                best_score = normalized_similarity
+                best_utterance = utterance
+
+        return best_score, best_utterance
+
+    def _get_embeddings_client(self) -> OllamaEmbeddings | None:
+        if self._embeddings_client is not None:
+            return self._embeddings_client
+
+        model_name = ROUTER_EMBED_MODEL or OLLAMA_MODEL
+        if not model_name:
+            return None
+
+        self._embeddings_client = OllamaEmbeddings(
+            model=model_name,
+            base_url=OLLAMA_BASE_URL,
+        )
+        return self._embeddings_client
 
 
 router = SemanticTicketRouter(routes)
