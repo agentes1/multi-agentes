@@ -78,6 +78,39 @@ class MailInboxMessage(models.Model):
         for record in self.search([("state", "=", "new")], order="received_date asc, id asc", limit=limit):
             record._safe_process()
         return True
+    
+    @api.model
+    def action_fetch_emails(self, *args, **kwargs):
+        """Ejecuta el fetch estándar de Odoo desde la vista lista."""
+        servers = self.env["fetchmail.server"].sudo().search([("active", "=", True)])
+
+        if not servers:
+            return {
+                "type": "ir.actions.client",
+                "tag": "display_notification",
+                "params": {
+                    "title": "Sin servidores",
+                    "message": "No hay servidores de correo entrante activos.",
+                    "type": "warning",
+                    "sticky": False,
+                },
+            }
+
+        for server in servers:
+            server.fetch_mail()
+
+        self.env["mail.inbox.message"].sudo()._cron_process_pending_intake(limit=20)
+
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Correos actualizados",
+                "message": "Odoo ha buscado correos nuevos y procesado los pendientes.",
+                "type": "success",
+                "sticky": False,
+            },
+        }
 
     def _safe_process(self):
         """Procesa un correo y guarda error controlado si algo falla."""

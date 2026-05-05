@@ -22,6 +22,7 @@ class Table(StrEnum):
     Order = "sale.order"
     OrderLine = "sale.order.line"
     SystemParameter = "ir.config_parameter"
+    MailInboxMessage = "mail.inbox.message"
 
 
 class OdooAPI:

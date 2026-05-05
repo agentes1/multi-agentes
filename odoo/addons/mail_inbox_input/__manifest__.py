@@ -8,7 +8,7 @@
     """,
     "author": "Agentes 1 + Local Custom",
     "category": "Productivity",
-    "depends": ["base", "mail"],
+    "depends": ["base", "mail", "google_gmail"],
     "data": [
         "security/ir.model.access.csv",
         "views/mail_inbox_message_views.xml",
