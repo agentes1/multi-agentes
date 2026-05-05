@@ -1,281 +1,177 @@
 from __future__ import annotations
 
+import re, unicodedata
 from dataclasses import dataclass
-import re
-import unicodedata
 
 from agents.assistant_chat_agent.service import ASSISTANT_CHAT_AGENT_NAME
 from agents.sales_agent.service import SALES_AGENT_NAME, build_sales_discuss_reply
 from routing.semantic_router import router
 
-
-_AFFIRMATIVE_TERMS = {
-    "si",
-    "sí",
-    "ok",
-    "vale",
-    "adelante",
-    "confirmo",
-    "correcto",
-    "de acuerdo",
-    "hazlo",
-    "crealo",
-    "créalo",
-    "generalo",
-    "genéralo",
-    "preparalo",
-    "prepáralo",
-}
-_NEGATIVE_PREFIXES = ("no", "espera", "cancel", "todavia no", "todavía no", "aun no", "aún no")
-_BUDGET_TERMS = ("presupuesto", "cotizacion", "cotización", "budget", "quote", "oferta")
-_SALES_TERMS = ("ventas", "comercial", "pipeline", "lead", "leads", "oportunidades", "crm comercial")
-_CREATION_TERMS = ("crea", "crear", "crealo", "genera", "generar", "generalo", "prepara", "preparar", "preparalo")
-_ASSISTANT_CONFIRMATION_PROMPT_TERMS = (
-    "quieres que",
-    "quiere que",
-    "podrias confirmar",
-    "puedes confirmar",
-    "confirmar si es correcto",
-    "si es asi",
-    "si es correcto",
-    "dime si",
-    "dime si o adelante",
-    "dime si o",
-)
-_ASSISTANT_CREATION_ACTION_TERMS = (
-    "prepar",
-    "gener",
-    "crear",
-    "creemos",
-    "marcare",
-    "ready for next stage",
-    "listo",
-    "presupuesto",
-    "cotizacion",
-    "oportunidad",
-    "crm",
-    "comercial",
-)
-_ASSISTANT_CYCLE_CLOSED_TERMS = (
-    "he creado el presupuesto",
-    "he creado la oportunidad",
-    "presupuesto creado",
-    "oportunidad comercial creada",
-    "si quieres puedes indicarme una nueva necesidad",
-)
+AFFIRMATIVE = {"si", "sí", "ok", "vale", "adelante", "confirmo", "correcto", "de acuerdo", "hazlo", "crealo", "créalo", "generalo", "genéralo", "preparalo", "prepáralo", "genial"}
+NEGATIVE_PREFIXES = ("no", "espera", "cancel", "todavia no", "todavía no", "aun no", "aún no")
+BUDGET_TERMS = {"presupuesto", "cotizacion", "cotización", "budget", "quote", "oferta", "precio", "coste", "costo", "propuesta"}
+SALES_TERMS = {"ventas", "venta", "comercial", "pipeline", "lead", "leads", "oportunidad", "oportunidades", "crm comercial"}
+CREATE_TERMS = {"crea", "crear", "crealo", "genera", "generar", "generalo", "prepara", "preparar", "preparalo"}
+CONFIRM_PROMPTS = {"quieres que", "quiere que", "confirmar", "si es correcto", "dime si", "adelante"}
+CREATE_ACTIONS = {"prepar", "gener", "crear", "marcare", "ready for next stage", "presupuesto", "cotizacion", "oportunidad", "crm", "comercial"}
+CLOSED_TERMS = {"he creado el presupuesto", "he creado la oportunidad", "presupuesto creado", "oportunidad comercial creada"}
 
 
 @dataclass(frozen=True)
 class DiscussMessageOrchestrator:
-    """Orquesta mensajes posteriores dentro de Discuss."""
+    """Orquesta los mensajes posteriores dentro de Discuss."""
 
     async def handle_discuss_message(self, payload: dict, thread_id: str | None = None, model: str | None = None) -> dict:
-        """Enruta el mensaje y devuelve una respuesta controlada desde la orquestación."""
-        trace = ["discuss_message_received"]
-        route_name = router(build_discuss_text(payload)).name
-        trace.append(f"route_decided:{route_name}")
-        contextual_route = _promote_context_route(payload, route_name)
-        if contextual_route != route_name:
-            trace.append(f"context_route_promoted:{contextual_route}")
-            route_name = contextual_route
-        actions = []
-        reply_route_name = route_name
+        """Mantiene la ruta activa y responde sin cambiar ventas a presupuesto."""
+        trace, actions = ["discuss_message_received"], []
+        route = resolve_route(payload)
+        trace.append(f"route_decided:{route}")
+        reply_route = route
 
-        if is_business_creation_confirmation(payload, route_name):
-            route_name = "budget" if _has_budget_context(payload, route_name) else "sales"
-            reply_route_name = "budget_confirmed" if route_name == "budget" else "sales_confirmed"
+        if is_business_confirmation(payload, route):
+            route = "budget" if has_budget_context(payload, route) and not has_sales_context(payload, route) else "sales"
+            reply_route = f"{route}_confirmed"
             actions.append({"type": "mark_ticket_ready", "ticket_id": payload.get("ticket_id")})
-            trace.append(f"{route_name}_creation_confirmed")
+            trace.append(f"{route}_creation_confirmed")
 
-        reply_text = _build_discuss_reply(payload=payload, route_name=reply_route_name)
+        return build_response(route, build_reply(payload, reply_route), trace + ["response_built:discuss_orchestrator"], actions)
 
-        return build_discuss_response(
-            route_name,
-            reply_text,
-            trace + ["response_built:discuss_orchestrator"],
-            actions=actions,
-        )
+
+def resolve_route(payload: dict) -> str:
+    """Usa la ruta guardada si el mensaje nuevo es corto o ambiguo."""
+    saved, body = norm(payload.get("assistant_route_name")), norm(payload.get("body"))
+    routed = router(build_discuss_text(payload)).name
+
+    if saved in {"budget", "sales"} and is_ambiguous(body):
+        return saved
+    if saved == "sales" and routed == "budget" and not explicit_budget(body):
+        return "sales"
+    if routed != "discard":
+        return routed
+    if recent_cycle_closed(payload):
+        return routed
+    if saved in {"budget", "sales"}:
+        return saved
+    if has_sales_context(payload, routed):
+        return "sales"
+    if has_budget_context(payload, routed):
+        return "budget"
+    return routed
 
 
 def build_discuss_text(payload: dict) -> str:
-    """Convierte el mensaje de Discuss en texto enrutable."""
+    """Texto mínimo que ve el router."""
     return f"Autor: {payload.get('author_email', '')}\nMensaje discuss: {payload.get('body', '')}".strip()
 
 
-def build_discuss_response(route_name: str, reply_text: str, trace: list[str], actions: list[dict] | None = None) -> dict:
-    """Construye una respuesta estable para la API."""
-    return {
-        "ok": True,
-        "route_name": route_name,
-        "agent_name": SALES_AGENT_NAME if route_name == "sales" else ASSISTANT_CHAT_AGENT_NAME,
-        "reply_text": reply_text,
-        "normalized_request": {},
-        "quote_summary": {},
-        "actions": actions or [],
-        "trace": trace,
-    }
+def build_response(route: str, reply: str, trace: list[str], actions: list[dict] | None = None) -> dict:
+    """Respuesta estable para la API."""
+    return {"ok": True, "route_name": route, "agent_name": SALES_AGENT_NAME if route == "sales" else ASSISTANT_CHAT_AGENT_NAME, "reply_text": reply, "normalized_request": {}, "quote_summary": {}, "actions": actions or [], "trace": trace}
 
 
-def _build_discuss_reply(payload: dict, route_name: str) -> str:
-    if route_name == "budget_confirmed":
-        return "Perfecto, marco el ticket como listo para la siguiente fase para generar el presupuesto."
-
-    if route_name == "sales_confirmed":
-        return "Perfecto, marco el ticket como listo para la siguiente fase para crear la oportunidad comercial en CRM."
-
-    if route_name == "budget":
-        requirements = _summarize_budget_context(payload)
-        if requirements:
-            return (
-                f"He entendido esta solicitud de presupuesto con este contexto inicial: {requirements}. "
-                "Si quieres que siga adelante, respóndeme con 'sí' o 'adelante' y lo marcaré como "
-                "'Ready for next stage' para preparar el presupuesto."
-            )
-        return (
-            "Parece una solicitud de presupuesto. Antes de prepararlo, indícame el alcance, módulos, "
-            "usuarios o necesidades principales. Cuando esté correcto, dime 'sí' o 'adelante' y lo marcaré "
-            "como 'Ready for next stage'."
-        )
-
-    if route_name == "sales":
+def build_reply(payload: dict, route: str) -> str:
+    """Construye la respuesta según la ruta activa."""
+    if route == "budget_confirmed":
+        return "Perfecto, marco el ticket como listo para generar el presupuesto."
+    if route == "sales_confirmed":
+        return "Perfecto, marco el ticket como listo para crear la oportunidad comercial en CRM."
+    if route == "sales":
         return build_sales_discuss_reply(payload)
-
-    body = _normalize(payload.get("body", ""))
-    if any(term in body for term in {"hola", "buenas", "buenos dias", "buen dia", "que tal", "que tiempo"}):
-        return (
-            "Hola. Para orientarte bien, cuéntame un poco más. Si buscas un presupuesto, dime qué módulos o alcance "
-            "quieres valorar."
-        )
+    if route == "budget":
+        context = summarize_budget_context(payload)
+        return f"He entendido esta solicitud de presupuesto con este contexto inicial: {context}. Si quieres que siga adelante, respóndeme con 'sí' o 'adelante'." if context else "Parece una solicitud de presupuesto. Indícame alcance, módulos o necesidades principales."
+    body = norm(payload.get("body"))
     if len(body.split()) <= 2:
-        return (
-            "Necesito un poco más de detalle para ayudarte. Si buscas un presupuesto, dime qué área, módulos o "
-            "necesidades quieres valorar."
-        )
-    return (
-        "Necesito un poco más de contexto para orientarte bien. Si buscas un presupuesto, dime qué módulos o alcance "
-        "quieres valorar; si es un problema, descríbeme el error y los pasos para reproducirlo."
+        return "Necesito un poco más de detalle para ayudarte. Dime si hablamos de soporte, ventas o presupuesto."
+    return "Necesito un poco más de contexto para orientarte bien. Describe la necesidad y te derivo al flujo adecuado."
+
+
+def is_business_confirmation(payload: dict, route: str) -> bool:
+    """Detecta confirmaciones para crear presupuesto u oportunidad."""
+    body = norm(payload.get("body"))
+    return bool(
+        payload.get("ticket_id")
+        and body
+        and not body.startswith(NEGATIVE_PREFIXES)
+        and is_affirmative(body)
+        and (has_budget_context(payload, route) or has_sales_context(payload, route))
+        and (has_creation_intent(body) or recent_assistant_asked_creation(payload))
     )
 
 
-def is_business_creation_confirmation(payload: dict, route_name: str) -> bool:
-    """Detecta si el usuario confirma que quiere crear el registro de negocio asociado."""
-    if not payload.get("ticket_id"):
-        return False
-
-    body = _normalize(payload.get("body", ""))
-    if not body or body.startswith(_NEGATIVE_PREFIXES):
-        return False
-    if not _is_affirmative(body):
-        return False
-    if not (_has_budget_context(payload, route_name) or _has_sales_context(payload, route_name)):
-        return False
-
-    return _has_creation_intent(body) or _recent_assistant_asked_to_create_business_record(payload)
-
-
-def _is_affirmative(text: str) -> bool:
+def is_affirmative(text: str) -> bool:
+    """Comprueba si el usuario confirma."""
     words = set(text.replace(",", " ").replace(".", " ").split())
-    return text in _AFFIRMATIVE_TERMS or bool(words.intersection(_normalize(term) for term in _AFFIRMATIVE_TERMS))
+    return text in {norm(x) for x in AFFIRMATIVE} or bool(words & {norm(x) for x in AFFIRMATIVE})
 
 
-def _has_budget_context(payload: dict, route_name: str) -> bool:
-    if route_name == "budget":
-        return True
-    context_parts = [
-        payload.get("ticket_title", ""),
-        payload.get("ticket_description", ""),
-        payload.get("ticket_team", ""),
-        payload.get("ticket_category", ""),
-        payload.get("ticket_type", ""),
-    ]
-    context_parts.extend(str(message.get("body", "")) for message in payload.get("recent_messages", []) or [])
-    context = _normalize(" ".join(context_parts))
-    return any(_normalize(term) in context for term in _BUDGET_TERMS)
+def is_ambiguous(body: str) -> bool:
+    """Detecta respuestas cortas que dependen del contexto."""
+    return not body or len(body.split()) <= 3 or is_affirmative(body)
 
 
-def _has_sales_context(payload: dict, route_name: str) -> bool:
-    if route_name == "sales":
-        return True
-    context_parts = [
-        payload.get("ticket_title", ""),
-        payload.get("ticket_description", ""),
-        payload.get("ticket_team", ""),
-        payload.get("ticket_category", ""),
-        payload.get("ticket_type", ""),
-    ]
-    context_parts.extend(str(message.get("body", "")) for message in payload.get("recent_messages", []) or [])
-    context = _normalize(" ".join(context_parts))
-    return any(_normalize(term) in context for term in _SALES_TERMS)
+def explicit_budget(body: str) -> bool:
+    """Solo cambia a budget si el usuario lo pide claro."""
+    return any(norm(term) in body for term in BUDGET_TERMS)
 
 
-def _has_creation_intent(text: str) -> bool:
-    return any(term in text for term in _CREATION_TERMS)
+def has_creation_intent(text: str) -> bool:
+    """Detecta intención de crear el registro."""
+    return any(term in text for term in CREATE_TERMS)
 
 
-def _recent_assistant_asked_to_create_business_record(payload: dict) -> bool:
-    for message in reversed(payload.get("recent_messages", []) or []):
-        author = _normalize(message.get("author_name", "") or message.get("author_email", ""))
-        body = _normalize(message.get("body", ""))
-        if "asistente" not in author and "assistant" not in author:
-            continue
-        if any(term in body for term in _ASSISTANT_CONFIRMATION_PROMPT_TERMS) and any(
-            term in body for term in _ASSISTANT_CREATION_ACTION_TERMS
-        ):
+def has_budget_context(payload: dict, route: str) -> bool:
+    """Busca contexto real de presupuesto."""
+    return route == "budget" or any(norm(term) in context_text(payload) for term in BUDGET_TERMS)
+
+
+def has_sales_context(payload: dict, route: str) -> bool:
+    """Busca contexto real de ventas."""
+    return route == "sales" or any(norm(term) in context_text(payload) for term in SALES_TERMS)
+
+
+def context_text(payload: dict) -> str:
+    """Une ticket y mensajes recientes sin perder contexto."""
+    parts = [payload.get(k, "") for k in ("ticket_title", "ticket_description", "ticket_team", "ticket_category", "ticket_type", "assistant_route_name")]
+    parts += [str(m.get("body", "")) for m in payload.get("recent_messages", []) or []]
+    return norm(" ".join(parts))
+
+
+def recent_assistant_asked_creation(payload: dict) -> bool:
+    """Revisa si el asistente pidió confirmar creación."""
+    for msg in reversed(payload.get("recent_messages", []) or []):
+        author, body = norm(msg.get("author_name") or msg.get("author_email")), norm(msg.get("body"))
+        if ("asistente" in author or "assistant" in author) and any(t in body for t in CONFIRM_PROMPTS) and any(t in body for t in CREATE_ACTIONS):
             return True
     return False
 
 
-def _normalize(value: object) -> str:
-    text = str(value or "").strip().lower()
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(char for char in text if not unicodedata.combining(char))
+def recent_cycle_closed(payload: dict) -> bool:
+    """Evita reabrir un flujo recién cerrado."""
+    for msg in reversed(payload.get("recent_messages", []) or []):
+        author, body = norm(msg.get("author_name") or msg.get("author_email")), norm(msg.get("body"))
+        if ("asistente" in author or "assistant" in author) and any(t in body for t in CLOSED_TERMS):
+            return True
+    return False
+
+
+def summarize_budget_context(payload: dict) -> str:
+    """Resume el contexto que se mostrará al usuario."""
+    text = " ".join(plain(payload.get(k, "")) for k in ("ticket_title", "ticket_description", "body"))
+    return " ".join(text.split())[:220]
+
+
+def plain(value: object) -> str:
+    """Quita HTML básico."""
+    return " ".join(re.sub(r"<[^>]+>", " ", str(value or "")).split())
+
+
+def norm(value: object) -> str:
+    """Normaliza texto para comparar."""
+    text = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    text = "".join(c for c in text if not unicodedata.combining(c))
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     return " ".join(text.split())
-
-
-def _summarize_budget_context(payload: dict) -> str:
-    context_parts = [
-        _plain_text(payload.get("ticket_title", "")),
-        _plain_text(payload.get("ticket_description", "")),
-        _plain_text(payload.get("body", "")),
-    ]
-    filtered = [part for part in context_parts if part]
-    if not filtered:
-        return ""
-    summary = " ".join(filtered)
-    return " ".join(summary.split())[:220]
-
-
-def _promote_context_route(payload: dict, route_name: str) -> str:
-    if route_name != "discard":
-        return route_name
-    body = _normalize(payload.get("body", ""))
-    if any(term in body for term in {"que tiempo", "clima", "saludo"}):
-        return route_name
-    if _recent_assistant_closed_business_cycle(payload):
-        return route_name
-    if _has_budget_context(payload, route_name):
-        return "budget"
-    if _has_sales_context(payload, route_name):
-        return "sales"
-    return route_name
-
-
-def _recent_assistant_closed_business_cycle(payload: dict) -> bool:
-    for message in reversed(payload.get("recent_messages", []) or []):
-        author = _normalize(message.get("author_name", "") or message.get("author_email", ""))
-        body = _normalize(message.get("body", ""))
-        if "asistente" not in author and "assistant" not in author:
-            continue
-        if any(term in body for term in _ASSISTANT_CYCLE_CLOSED_TERMS):
-            return True
-    return False
-
-
-def _plain_text(value: object) -> str:
-    text = str(value or "")
-    text = re.sub(r"<[^>]+>", " ", text)
-    return " ".join(text.split()).strip()
 
 
 def build_discuss_message_orchestrator() -> DiscussMessageOrchestrator:

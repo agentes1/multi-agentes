@@ -45,8 +45,8 @@ services:
         condition: service_started
       web:
         condition: service_started
-      ollama-init:
-        condition: service_completed_successfully
+      ollama:
+        condition: service_started
     ports:
       - "8000:8000"
     env_file:

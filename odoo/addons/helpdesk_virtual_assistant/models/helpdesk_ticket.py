@@ -1,5 +1,5 @@
-import logging
 import json
+import logging
 import os
 import re
 from urllib.error import HTTPError, URLError
@@ -9,469 +9,314 @@ from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
-_BUDGET_HINTS = (
-    "presupuesto",
-    "precio",
-    "propuesta",
-    "cotizacion",
-    "cotización",
-    "implantar",
-    "implantacion",
-    "implantación",
-    "automatizacion",
-    "automatización",
-    "formacion",
-    "formación",
-    "modulos",
-    "módulos",
-    "soporte mensual",
-    "desarrollo",
-)
-_SALES_HINTS = (
-    "pipeline",
-    "lead",
-    "leads",
-    "oportunidades",
-    "ventas",
-    "comercial",
-    "seguimiento comercial",
-)
-_BUDGET_PRIMARY_HINTS = ("presupuesto", "cotizacion", "cotización", "precio", "propuesta")
-_SALES_PRIMARY_HINTS = ("pipeline", "lead", "leads", "oportunidades", "ventas")
+ROUTE_HINTS = {
+    "budget": {
+        "primary": ("presupuesto", "cotizacion", "cotización", "precio", "propuesta", "budget"),
+        "secondary": (
+            "presupuesto", "precio", "propuesta", "cotizacion", "cotización",
+            "implantar", "implantacion", "implantación", "automatizacion",
+            "automatización", "formacion", "formación", "modulos", "módulos", "desarrollo",
+        ),
+    },
+    "sales": {
+        "primary": ("pipeline", "lead", "leads", "oportunidades", "ventas"),
+        "secondary": ("pipeline", "lead", "leads", "oportunidades", "ventas", "comercial", "seguimiento comercial"),
+    },
+}
+
+BUSINESS = {
+    "budget": {
+        "url_param": "helpdesk_virtual_assistant.backend_budget_from_ticket_url",
+        "env": "HELP_DESK_VIRTUAL_ASSISTANT_BUDGET_FROM_TICKET_URL",
+        "default": "http://assistant-backend:8000/assistant/budget-from-ticket",
+        "thread": "odoo-ticket-budget-",
+        "done_flag": "assistant_budget_created",
+        "record_id": "assistant_sale_order_id",
+        "response": "assistant_budget_response",
+        "id_keys": ("sale_order_id", ("quote_summary", "sale_order_id")),
+        "summary_key": "quote_summary",
+        "summary_name": "sale_order_name",
+        "ok_error": "Budget backend returned an error",
+        "final": "He creado el presupuesto {ref}. Si quieres, puedes indicarme una nueva necesidad y la reviso por este chat.",
+    },
+    "sales": {
+        "url_param": "helpdesk_virtual_assistant.backend_sales_from_ticket_url",
+        "env": "HELP_DESK_VIRTUAL_ASSISTANT_SALES_FROM_TICKET_URL",
+        "default": "http://assistant-backend:8000/assistant/sales-from-ticket",
+        "thread": "odoo-ticket-sales-",
+        "done_flag": "assistant_sales_created",
+        "record_id": "assistant_crm_lead_id",
+        "response": "assistant_sales_response",
+        "id_keys": ("crm_lead_id", ("crm_summary", "id")),
+        "summary_key": "crm_summary",
+        "summary_name": "name",
+        "ok_error": "Sales backend returned an error",
+        "final": "He creado la oportunidad comercial {ref}. Si quieres, puedes indicarme una nueva necesidad y la reviso por este chat.",
+    },
+}
 
 
 class HelpdeskTicket(models.Model):
-    # Extensión de helpdesk.ticket que conecta el alta de tickets con el backend Python.
-    # Este archivo solo se ocupa del arranque del flujo: abrir chat y pedir primera respuesta.
+    """Conecta tickets de Odoo con el asistente, Discuss y agentes de negocio."""
+
     _inherit = "helpdesk.ticket"
 
-    assistant_channel_id = fields.Many2one(
-        comodel_name="discuss.channel",
-        string="Assistant Discuss Channel",
-        copy=False,
-        readonly=True,
-    )
-    assistant_route_name = fields.Char(
-        string="Assistant Route",
-        readonly=True,
-        copy=False,
-    )
-    assistant_budget_created = fields.Boolean(
-        string="Assistant Budget Created",
-        readonly=True,
-        copy=False,
-    )
-    assistant_sale_order_id = fields.Integer(
-        string="Assistant Sale Order ID",
-        readonly=True,
-        copy=False,
-    )
-    assistant_budget_response = fields.Text(
-        string="Assistant Budget Response",
-        readonly=True,
-        copy=False,
-    )
-    assistant_sales_created = fields.Boolean(
-        string="Assistant Sales Created",
-        readonly=True,
-        copy=False,
-    )
-    assistant_crm_lead_id = fields.Integer(
-        string="Assistant CRM Lead ID",
-        readonly=True,
-        copy=False,
-    )
-    assistant_sales_response = fields.Text(
-        string="Assistant Sales Response",
-        readonly=True,
-        copy=False,
-    )
+    assistant_channel_id = fields.Many2one("discuss.channel", string="Assistant Discuss Channel", copy=False, readonly=True)
+    assistant_route_name = fields.Char(string="Assistant Route", copy=False, readonly=True)
+
+    assistant_budget_created = fields.Boolean(string="Assistant Budget Created", copy=False, readonly=True)
+    assistant_sale_order_id = fields.Integer(string="Assistant Sale Order ID", copy=False, readonly=True)
+    assistant_budget_response = fields.Text(string="Assistant Budget Response", copy=False, readonly=True)
+
+    assistant_sales_created = fields.Boolean(string="Assistant Sales Created", copy=False, readonly=True)
+    assistant_crm_lead_id = fields.Integer(string="Assistant CRM Lead ID", copy=False, readonly=True)
+    assistant_sales_response = fields.Text(string="Assistant Sales Response", copy=False, readonly=True)
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Crea tickets y abre chat salvo si vienen de email o de un flujo interno."""
         tickets = super().create(vals_list)
-        ticket_origin = self.env.context.get("assistant_ticket_origin")
-        skip_assistant_chat = (
-            ticket_origin == "email"
-            or self.env.context.get("skip_virtual_assistant_chat")
-            or self.env.context.get("skip_virtual_assistant_flow")
-        )
+        if self._skip_initial_chat():
+            return tickets
+
         for ticket in tickets:
-            # Los tickets creados desde email siguen convergiendo en helpdesk,
-            # pero la primera respuesta debe salir por correo, no por Discuss.
-            if skip_assistant_chat:
-                _logger.info(
-                    "Skipping virtual assistant Discuss chat for ticket %s because context origin is %s.",
-                    ticket.id,
-                    ticket_origin,
-                )
-                continue
             try:
-                # Cada ticket nuevo arranca automáticamente una conversación en Discuss.
                 ticket._open_virtual_assistant_chat()
             except Exception:
-                _logger.exception(
-                    "Virtual assistant chat could not be created for ticket %s",
-                    ticket.id,
-                )
+                _logger.exception("No se pudo abrir el chat del asistente para el ticket %s", ticket.id)
         return tickets
 
     def write(self, vals):
-        trigger_ready_tickets = self.env["helpdesk.ticket"]
+        """Al cerrar el ticket, crea presupuesto o lead según la ruta detectada."""
+        to_process = self.env["helpdesk.ticket"]
         if vals.get("kanban_state") == "done" and not self.env.context.get("skip_assistant_budget_trigger"):
-            trigger_ready_tickets = self.filtered(
-                lambda ticket: (
-                    ticket.kanban_state != "done"
-                )
-            )
+            to_process = self.filtered(lambda t: t.kanban_state != "done")
 
         result = super().write(vals)
 
-        for ticket in trigger_ready_tickets:
+        for ticket in to_process:
             try:
-                route_name = ticket._resolve_ready_state_route()
-                if route_name == "budget":
-                    if not ticket.assistant_budget_created and not ticket.assistant_sale_order_id:
-                        ticket._trigger_budget_from_ready_state()
-                elif route_name == "sales":
-                    if not ticket.assistant_sales_created and not ticket.assistant_crm_lead_id:
-                        ticket._trigger_sales_from_ready_state()
+                ticket._run_business_flow(ticket._resolve_ready_state_route())
             except Exception:
-                _logger.exception(
-                    "Assistant follow-up could not create a business record for ticket %s",
-                    ticket.id,
-                )
-
+                _logger.exception("No se pudo crear el registro de negocio para el ticket %s", ticket.id)
         return result
 
-    def _resolve_ready_state_route(self):
-        self.ensure_one()
-        route_name = (self.assistant_route_name or "").strip().lower()
-        if route_name in {"budget", "sales"}:
-            return route_name
+    def _skip_initial_chat(self):
+        """Evita chat si el ticket viene de email o de un flujo interno."""
+        return (
+            self.env.context.get("assistant_ticket_origin") == "email"
+            or self.env.context.get("skip_virtual_assistant_chat")
+            or self.env.context.get("skip_virtual_assistant_flow")
+        )
 
-        text = self._normalize_route_text(" ".join(filter(None, [self.name or "", self.description or ""])))
-        if any(self._normalize_route_text(term) in text for term in _BUDGET_PRIMARY_HINTS):
+    def _resolve_ready_state_route(self):
+        """Devuelve 'budget', 'sales' o vacío según ruta guardada o texto del ticket."""
+        self.ensure_one()
+        route = (self.assistant_route_name or "").strip().lower()
+        if route in {"budget", "sales"}:
+            return route
+        if route == "general":
+            return ""
+
+        text = self._clean_text(" ".join(filter(None, [
+            self.name,
+            self.description,
+            self.team_id.name if self.team_id else "",
+            self.ticket_type_id.name if "ticket_type_id" in self._fields and self.ticket_type_id else "",
+        ])))
+
+        for name, hints in ROUTE_HINTS.items():
+            if any(self._clean_text(term) in text for term in hints["primary"]):
+                return name
+
+        scores = {
+            name: sum(self._clean_text(term) in text for term in hints["secondary"])
+            for name, hints in ROUTE_HINTS.items()
+        }
+        if scores["budget"] >= 2 and scores["budget"] > scores["sales"]:
             return "budget"
-        budget_hits = self._count_route_hints(text, _BUDGET_HINTS)
-        sales_hits = self._count_route_hints(text, _SALES_HINTS)
-        if budget_hits >= 2 and budget_hits > sales_hits:
-            return "budget"
-        if any(self._normalize_route_text(term) in text for term in _SALES_PRIMARY_HINTS):
-            return "sales"
-        if sales_hits >= 2 and sales_hits >= budget_hits:
+        if scores["sales"] >= 2 and scores["sales"] >= scores["budget"]:
             return "sales"
         return ""
 
     @staticmethod
-    def _normalize_route_text(value):
-        text = re.sub(r"<[^>]+>", " ", str(value or "").lower())
-        return " ".join(text.split())
+    def _clean_text(value):
+        """Normaliza texto simple para comparar rutas."""
+        return " ".join(re.sub(r"<[^>]+>", " ", str(value or "").lower()).split())
 
-    @classmethod
-    def _count_route_hints(cls, text, hints):
-        return sum(1 for term in hints if cls._normalize_route_text(term) in text)
-
-    def _trigger_budget_from_ready_state(self):
+    def _run_business_flow(self, route):
+        """Lanza el agente de negocio elegido y guarda su resultado en Odoo."""
         self.ensure_one()
-        if self.assistant_budget_created or self.assistant_sale_order_id:
+        if route not in BUSINESS:
             return
 
-        endpoint_url = self._get_budget_from_ticket_endpoint_url()
-        payload = {
-            "ticket_id": self.id,
-            "title": self.name or "",
-            "description": self.description or "",
-            "partner_id": self.partner_id.id if self.partner_id else None,
-            "partner_name": self.partner_id.name if self.partner_id else self.partner_name or "",
-            "partner_email": self.partner_id.email if self.partner_id else self.partner_email or "",
-            "thread_id": f"odoo-ticket-budget-{self.id}",
-        }
-
-        request = Request(
-            endpoint_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with urlopen(request, timeout=180) as response:
-            raw_body = response.read().decode("utf-8")
-        parsed = json.loads(raw_body)
-
-        if not parsed.get("ok"):
-            raise RuntimeError(parsed.get("error") or "Budget backend returned an error")
-
-        sale_order_id = parsed.get("sale_order_id") or parsed.get("quote_summary", {}).get("sale_order_id")
-        self.with_context(skip_assistant_budget_trigger=True).sudo().write(
-            {
-                "assistant_budget_created": bool(sale_order_id),
-                "assistant_sale_order_id": sale_order_id or 0,
-                "assistant_budget_response": parsed.get("reply_text", ""),
-            }
-        )
-        self._post_assistant_completion_to_discuss(self._build_budget_completion_message(parsed))
-
-    def _get_budget_from_ticket_endpoint_url(self):
-        self.ensure_one()
-        return self.env["ir.config_parameter"].sudo().get_param(
-            "helpdesk_virtual_assistant.backend_budget_from_ticket_url",
-            os.getenv(
-                "HELP_DESK_VIRTUAL_ASSISTANT_BUDGET_FROM_TICKET_URL",
-                "http://assistant-backend:8000/assistant/budget-from-ticket",
-            ),
-        )
-
-    def _trigger_sales_from_ready_state(self):
-        self.ensure_one()
-        if self.assistant_sales_created or self.assistant_crm_lead_id:
+        cfg = BUSINESS[route]
+        if self[cfg["done_flag"]] or self[cfg["record_id"]]:
             return
 
-        endpoint_url = self._get_sales_from_ticket_endpoint_url()
-        payload = {
+        parsed = self._post_json(self._endpoint(cfg), self._ticket_payload(cfg["thread"]))
+        if not parsed.get("ok"):
+            raise RuntimeError(parsed.get("error") or cfg["ok_error"])
+
+        record_id = self._nested_get(parsed, *cfg["id_keys"])
+        self.with_context(skip_assistant_budget_trigger=True).sudo().write({
+            cfg["done_flag"]: bool(record_id),
+            cfg["record_id"]: record_id or 0,
+            cfg["response"]: parsed.get("reply_text", ""),
+        })
+        self._post_assistant_completion_to_discuss(self._completion_message(route, parsed, record_id))
+
+    def _ticket_payload(self, thread_prefix):
+        """Crea el payload común que entiende el backend."""
+        self.ensure_one()
+        partner = self.partner_id
+        return {
             "ticket_id": self.id,
+            "notify_partner_id": self._notify_partner_id(),
             "title": self.name or "",
             "description": self.description or "",
-            "partner_id": self.partner_id.id if self.partner_id else None,
-            "partner_name": self.partner_id.name if self.partner_id else self.partner_name or "",
-            "partner_email": self.partner_id.email if self.partner_id else self.partner_email or "",
-            "thread_id": f"odoo-ticket-sales-{self.id}",
+            "partner_id": partner.id if partner else None,
+            "partner_name": partner.name if partner else self.partner_name or "",
+            "partner_email": partner.email if partner else self.partner_email or "",
+            "thread_id": f"{thread_prefix}{self.id}",
         }
 
-        request = Request(
-            endpoint_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with urlopen(request, timeout=180) as response:
-            raw_body = response.read().decode("utf-8")
-        parsed = json.loads(raw_body)
-
-        if not parsed.get("ok"):
-            raise RuntimeError(parsed.get("error") or "Sales backend returned an error")
-
-        crm_lead_id = parsed.get("crm_lead_id") or parsed.get("crm_summary", {}).get("id")
-        self.with_context(skip_assistant_budget_trigger=True).sudo().write(
-            {
-                "assistant_sales_created": bool(crm_lead_id),
-                "assistant_crm_lead_id": crm_lead_id or 0,
-                "assistant_sales_response": parsed.get("reply_text", ""),
-            }
-        )
-        self._post_assistant_completion_to_discuss(self._build_sales_completion_message(parsed))
-
-    def _get_sales_from_ticket_endpoint_url(self):
-        self.ensure_one()
+    def _endpoint(self, cfg):
+        """Lee URL desde parámetros de Odoo, variable Docker o valor por defecto."""
         return self.env["ir.config_parameter"].sudo().get_param(
-            "helpdesk_virtual_assistant.backend_sales_from_ticket_url",
-            os.getenv(
-                "HELP_DESK_VIRTUAL_ASSISTANT_SALES_FROM_TICKET_URL",
-                "http://assistant-backend:8000/assistant/sales-from-ticket",
-            ),
+            cfg["url_param"],
+            os.getenv(cfg["env"], cfg["default"]),
         )
+
+    def _post_json(self, url, payload, timeout=180):
+        """Envía JSON al backend y devuelve la respuesta parseada."""
+        req = Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode())
+
+    @staticmethod
+    def _nested_get(data, *keys):
+        """Busca valores directos o anidados: 'id' o ('summary', 'id')."""
+        for key in keys:
+            if isinstance(key, tuple):
+                value = data.get(key[0], {}).get(key[1])
+            else:
+                value = data.get(key)
+            if value:
+                return value
+        return None
 
     def _open_virtual_assistant_chat(self):
+        """Abre Discuss, publica recepción y después la respuesta real del backend."""
         self.ensure_one()
+        assistant = self._virtual_assistant_user()
+        recipient = self._recipient_partner()
 
-        assistant_user = self._get_virtual_assistant_user()
-        if not assistant_user:
-            _logger.warning(
-                "No assistant user was found for ticket %s. Expected assigned user or 'Asistente Virtual'.",
-                self.id,
-            )
+        if not assistant or not recipient:
+            _logger.warning("Faltan usuarios/partners para abrir chat en ticket %s", self.id)
             return
 
-        recipient_partner = self._get_ticket_recipient_partner()
-        if not recipient_partner:
-            _logger.warning(
-                "No recipient partner was found for ticket %s. Chat will not be created.",
-                self.id,
-            )
-            return
+        channel = self._get_or_create_channel(assistant, recipient)
+        self.sudo().write({"assistant_channel_id": channel.id})
 
-        partner_ids = [recipient_partner.id, assistant_user.partner_id.id]
+        initial = self._initial_message()
+        self._post_to_channel(channel, assistant, initial)
+
+        result = self._fetch_virtual_assistant_message()
+        route = str(result.get("route_name", "")).strip()
+        message = str(result.get("reply_text", "")).strip()
+
+        if route:
+            self.sudo().write({"assistant_route_name": route})
+        if message and message != initial:
+            self._post_to_channel(channel, assistant, message)
+
+    def _get_or_create_channel(self, assistant, recipient):
+        """Reutiliza o crea un canal Discuss para evitar duplicados."""
+        self.ensure_one()
         channel_name = f"Ticket {self.id} - Asistente Virtual"
-        channel_model = self.env["discuss.channel"].sudo()
+        Channel = self.env["discuss.channel"].sudo()
 
-        # La apertura del chat debe ser idempotente para evitar duplicados si Odoo
-        # dispara el flujo de creacion del ticket mas de una vez.
+        channel = self.assistant_channel_id.sudo().exists() or Channel.search([("name", "=", channel_name)], limit=1)
+        if channel:
+            return channel
+
+        vals = {"name": channel_name, "channel_type": "chat"}
+        partners = [(4, recipient.id), (4, assistant.partner_id.id)]
+
+        if "partner_ids" in Channel._fields:
+            vals["partner_ids"] = partners
+        elif "channel_partner_ids" in Channel._fields:
+            vals["channel_partner_ids"] = partners
+
+        return Channel.create(vals)
+
+    def _fetch_virtual_assistant_message(self):
+        """Pide al backend la primera respuesta del semantic router/agente."""
+        self.ensure_one()
+        cfg = {
+            "url_param": "helpdesk_virtual_assistant.backend_ticket_entry_url",
+            "env": "HELP_DESK_VIRTUAL_ASSISTANT_TICKET_ENTRY_URL",
+            "default": "http://assistant-backend:8000/assistant/ticket-entry",
+        }
+
+        try:
+            parsed = self._post_json(self._endpoint(cfg), self._ticket_payload("odoo-ticket-"))
+            if str(parsed.get("reply_text", "")).strip():
+                return parsed
+            _logger.warning("Backend sin reply_text para ticket %s", self.id)
+        except (HTTPError, URLError) as error:
+            _logger.exception("Backend no disponible para ticket %s: %s", self.id, error)
+        except Exception:
+            _logger.exception("Fallo inesperado llamando al backend para ticket %s", self.id)
+
+        return {"reply_text": self._initial_message(), "route_name": ""}
+
+    def _post_assistant_completion_to_discuss(self, message):
+        """Publica el cierre del flujo de negocio en Discuss."""
+        self.ensure_one()
         channel = self.assistant_channel_id.sudo().exists()
-        if not channel:
-            channel = channel_model.search(
-                [("name", "=", channel_name)],
-                limit=1,
-            )
-        if not channel:
-            create_vals = {
-                "name": channel_name,
-                "channel_type": "chat",
-            }
-            partner_commands = [(4, partner_id) for partner_id in partner_ids]
-            if "partner_ids" in channel_model._fields:
-                create_vals["partner_ids"] = partner_commands
-            elif "channel_partner_ids" in channel_model._fields:
-                create_vals["channel_partner_ids"] = partner_commands
+        assistant = self._virtual_assistant_user()
+        if message and channel and assistant and assistant.partner_id:
+            self._post_to_channel(channel, assistant, message)
 
-            channel = channel_model.create(create_vals)
-
-        if self.assistant_channel_id != channel:
-            self.sudo().write({"assistant_channel_id": channel.id})
-
-        # Primer mensaje fijo: confirma recepción antes de consultar al semantic router.
-        initial_message = self._build_virtual_assistant_message()
-        channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
-            body=initial_message,
-            author_id=assistant_user.partner_id.id,
+    def _post_to_channel(self, channel, user, body):
+        """Publica un mensaje como asistente evitando reentradas del flujo."""
+        channel.with_context(skip_virtual_assistant_followup=True).with_user(user).message_post(
+            body=body,
+            author_id=user.partner_id.id,
             message_type="comment",
             subtype_xmlid="mail.mt_comment",
         )
 
-        # Segundo mensaje: respuesta real del backend según ruta/agente seleccionado.
-        assistant_result = self._fetch_virtual_assistant_message()
-        route_name = str(assistant_result.get("route_name", "")).strip()
-        message = str(assistant_result.get("reply_text", "")).strip()
+    def _completion_message(self, route, parsed, record_id):
+        """Construye el mensaje final para budget o sales."""
+        cfg = BUSINESS[route]
+        summary = parsed.get(cfg["summary_key"], {}) or {}
+        ref = summary.get(cfg["summary_name"]) or (f"ID {record_id}" if record_id else "sin referencia visible")
+        return cfg["final"].format(ref=ref)
 
-        fields_to_update = {}
-        if route_name:
-            fields_to_update["assistant_route_name"] = route_name
-        if fields_to_update:
-            self.sudo().write(fields_to_update)
-
-        if message and message != initial_message:
-            channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
-                body=message,
-                author_id=assistant_user.partner_id.id,
-                message_type="comment",
-                subtype_xmlid="mail.mt_comment",
-            )
-
-    def _get_virtual_assistant_user(self):
+    def _virtual_assistant_user(self):
+        """Devuelve el asignado o el usuario llamado Asistente Virtual."""
         self.ensure_one()
         if self.user_id and self.user_id.partner_id:
             return self.user_id
+        return self.env["res.users"].sudo().search([("name", "=", "Asistente Virtual")], limit=1)
 
-        return self.env["res.users"].sudo().search(
-            [("name", "=", "Asistente Virtual")],
-            limit=1,
-        )
-
-    def _get_ticket_recipient_partner(self):
+    def _recipient_partner(self):
+        """Devuelve el partner destinatario del chat."""
         self.ensure_one()
-        if self.partner_id:
-            return self.partner_id
-        if self.create_uid and self.create_uid.partner_id:
-            return self.create_uid.partner_id
-        return False
+        return self.partner_id or (self.create_uid.partner_id if self.create_uid else False)
 
-    def _build_virtual_assistant_message(self):
+    def _notify_partner_id(self):
+        """Devuelve a quién notificar en Odoo."""
+        self.ensure_one()
+        return self.env.user.partner_id.id if self.env.user.partner_id else None
+
+    def _initial_message(self):
+        """Mensaje fijo de recepción del ticket."""
         self.ensure_one()
         return (
             f"Hola. Soy Asistente Virtual y he recibido tu ticket '{self.name}'. "
             "Estoy revisando tu solicitud para derivarla al agente adecuado."
-        )
-
-    def _post_assistant_completion_to_discuss(self, message):
-        self.ensure_one()
-        if not message:
-            return
-
-        channel = self.assistant_channel_id.sudo().exists()
-        assistant_user = self._get_virtual_assistant_user()
-        if not channel or not assistant_user or not assistant_user.partner_id:
-            return
-
-        channel.with_context(skip_virtual_assistant_followup=True).with_user(assistant_user).message_post(
-            body=message,
-            author_id=assistant_user.partner_id.id,
-            message_type="comment",
-            subtype_xmlid="mail.mt_comment",
-        )
-
-    def _build_budget_completion_message(self, parsed):
-        self.ensure_one()
-        quote_summary = parsed.get("quote_summary", {}) or {}
-        sale_order_name = quote_summary.get("sale_order_name")
-        sale_order_id = parsed.get("sale_order_id") or quote_summary.get("sale_order_id")
-
-        reference = sale_order_name or (f"ID {sale_order_id}" if sale_order_id else "sin referencia visible")
-        return (
-            f"He creado el presupuesto {reference}. "
-            "Si quieres, puedes indicarme una nueva necesidad y la reviso por este chat."
-        )
-
-    def _build_sales_completion_message(self, parsed):
-        self.ensure_one()
-        crm_summary = parsed.get("crm_summary", {}) or {}
-        opportunity_name = crm_summary.get("name")
-        crm_lead_id = parsed.get("crm_lead_id") or crm_summary.get("id")
-
-        reference = opportunity_name or (f"ID {crm_lead_id}" if crm_lead_id else "sin referencia visible")
-        return (
-            f"He creado la oportunidad comercial {reference}. "
-            "Si quieres, puedes indicarme una nueva necesidad y la reviso por este chat."
-        )
-
-    def _fetch_virtual_assistant_message(self):
-        self.ensure_one()
-        endpoint_url = self._get_backend_endpoint_url()
-        # El backend recibe el contexto mínimo del ticket y devuelve el texto ya preparado.
-        payload = {
-            "ticket_id": self.id,
-            "title": self.name or "",
-            "description": self.description or "",
-            "partner_name": self.partner_id.name if self.partner_id else "",
-            "partner_email": self.partner_id.email if self.partner_id else "",
-            "thread_id": f"odoo-ticket-{self.id}",
-        }
-
-        request = Request(
-            endpoint_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with urlopen(request, timeout=180) as response:
-                raw_body = response.read().decode("utf-8")
-            parsed = json.loads(raw_body)
-            reply_text = str(parsed.get("reply_text", "")).strip()
-            if reply_text:
-                return parsed
-            _logger.warning(
-                "Assistant backend returned no reply_text for ticket %s. Falling back to default message.",
-                self.id,
-            )
-        except HTTPError as error:
-            _logger.exception(
-                "Assistant backend returned HTTP error for ticket %s: %s",
-                self.id,
-                error,
-            )
-        except URLError as error:
-            _logger.exception(
-                "Assistant backend could not be reached for ticket %s: %s",
-                self.id,
-                error,
-            )
-        except Exception:
-            _logger.exception(
-                "Assistant backend call failed unexpectedly for ticket %s",
-                self.id,
-            )
-
-        return {"reply_text": self._build_virtual_assistant_message(), "route_name": ""}
-
-    def _get_backend_endpoint_url(self):
-        self.ensure_one()
-        parameter_model = self.env["ir.config_parameter"].sudo()
-        # Permite sobreescribir la URL desde parámetros de Odoo o variables de entorno Docker.
-        return parameter_model.get_param(
-            "helpdesk_virtual_assistant.backend_ticket_entry_url",
-            os.getenv(
-                "HELP_DESK_VIRTUAL_ASSISTANT_TICKET_ENTRY_URL",
-                "http://assistant-backend:8000/assistant/ticket-entry",
-            ),
         )

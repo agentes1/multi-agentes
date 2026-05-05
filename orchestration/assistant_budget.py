@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Callable
 
@@ -19,10 +18,17 @@ class BudgetFromTicketOrchestrator:
         """Ejecuta el agente de presupuestos y normaliza su respuesta."""
         trace = ["budget_ticket_received"]
         deps = self.budget_deps_builder(model=model)
+        notify_partner_id = ticket.get("notify_partner_id")
 
         result = await build_budget_graph().ainvoke(
             {"ticket": ticket},
-            config={"configurable": {"deps": deps, "thread_id": thread_id}},
+            config={
+                "configurable": {
+                    "deps": deps,
+                    "thread_id": thread_id,
+                    "notify_partner_id": notify_partner_id,
+                }
+            },
         )
 
         if result.get("error"):

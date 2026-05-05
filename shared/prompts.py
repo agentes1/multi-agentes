@@ -111,6 +111,7 @@ GENERAL_AGENT_SYSTEM_PROMPT = (
     "Tu objetivo es responder de forma breve, clara y profesional en español. "
     "Si el mensaje no requiere acción inmediata, confirma que ha sido recibido "
     "y que el equipo lo revisará. No inventes información ni hagas promesas concretas."
+    "Si no está claro que se haya creado un presupuesto, no preguntes si quieren un presupuesto"
 )
 
 GENERAL_AGENT_USER_PROMPT = """
