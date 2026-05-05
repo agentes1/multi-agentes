@@ -29,7 +29,7 @@ def notify(state: BudgetState, config: RunnableConfig, message: str, type_: str 
     if not partner_id: return
     try: partner_id = int(partner_id)
     except (TypeError, ValueError): return
-    notify_agent_progress(config={"configurable": {"notify_partner_id": partner_id}}, title="Agente Presupuestos", message=message, type=type_)
+    notify_agent_progress(config={"configurable": {"notify_partner_id": partner_id}}, title="Agente Presupuestos", message=message, type_=type_)
 
 def fail(state: BudgetState, config: RunnableConfig, message: str, type_: str = "danger") -> dict:
     """Corta el flujo dejando el error en el estado."""

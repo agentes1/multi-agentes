@@ -58,7 +58,7 @@ def build_description(request: dict, company: dict | None, history: dict | None 
 
 def notify_progress(config: RunnableConfig, message: str, type_: str = "info") -> None:
     """Notifica el avance del agente."""
-    notify_agent_progress(config=config, title="Agente Intake", message=message, type=type_)
+    notify_agent_progress(config=config, title="Agente Intake", message=message, type_=type_)
 
 def build_result(message: str, **extra) -> dict:
     """Devuelve un estado con mensaje interno."""
