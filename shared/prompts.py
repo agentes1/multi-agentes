@@ -131,23 +131,33 @@ Devuelve solo JSON válido con esta estructura:
   "company_name": "string",
   "project_summary": "string",
   "requirements": ["string"],
-  "urgency": "string",
+  "urgency": "baja|media|alta",
   "ticket_type": "budget|issue|discard",
-  "missing_information": []
+  "missing_information": ["string"]
 }}
 
 Reglas:
-- No inventes datos.
-- company_name debe salir del contenido del email o del dominio del remitente.
-- Si no puedes identificar una empresa, usa company_name = "".
-- Si falta información relevante, añádela en missing_information.
-- Si no hay una petición clara, usa ticket_type = "discard".
-- Devuelve solo JSON válido, sin explicaciones.
+- Devuelve TODO en español.
+- No inventes información.
+- company_name debe salir del cuerpo, firma, remitente o dominio del email.
+- Ejemplos:
+  - "Juan Pérez | ACME" → "ACME"
+  - "Saludos, María - Ibertech" → "Ibertech"
+  - "Somos NetNova" → "NetNova"
+
+Clasificación:
+- Usa "budget" si el cliente pide presupuesto, precios, servicios, automatización, implantación, desarrollo, CRM, ERP, consultoría o información comercial.
+- Usa "issue" solo si el cliente reporta un problema técnico, error, incidencia o fallo existente.
+- Usa "discard" si no hay petición clara.
+
+- project_summary debe ser corto y en español.
+- requirements debe contener necesidades concretas y en español.
+- Si faltan datos importantes, añádelos en missing_information.
+- Devuelve únicamente JSON válido.
 
 Email:
 {email_text}
 """
-
 
 COMPANY_MATCHING_PROMPT = """
 Selecciona la empresa existente que más se parezca a la empresa detectada.

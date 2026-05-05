@@ -1,15 +1,19 @@
 # Multi-agentes
 
-Backend Python multi-agente integrado con Odoo 18 para clasificar solicitudes de clientes, crear tickets de helpdesk y generar presupuestos comerciales en Odoo.
+Backend Python multi-agente integrado con Odoo 18. El sistema clasifica solicitudes
+de clientes, crea tickets de Helpdesk desde correos entrantes, conversa por Discuss
+y, tras confirmacion, crea presupuestos de venta u oportunidades CRM en Odoo.
 
-El flujo actual no usa un endpoint generico `/process`: Odoo llama a endpoints especificos del backend segun el origen de la accion:
+La API no usa un endpoint generico de procesamiento. Odoo llama a endpoints
+especificos segun el origen de la accion:
 
-1. `/assistant/incoming-email`: procesa correos entrantes guardados por Odoo.
-2. `/assistant/ticket-entry`: procesa tickets de helpdesk ya creados.
-3. `/assistant/discuss-message`: procesa mensajes posteriores en el chat de Discuss.
-4. `/assistant/budget-from-ticket`: crea el presupuesto cuando un ticket pasa a Ready for next stage.
+1. `POST /assistant/incoming-email`: procesa correos entrantes guardados por Odoo.
+2. `POST /assistant/ticket-entry`: responde al crear un ticket manual.
+3. `POST /assistant/discuss-message`: responde a mensajes posteriores en Discuss.
+4. `POST /assistant/budget-from-ticket`: crea presupuesto desde un ticket validado.
+5. `POST /assistant/sales-from-ticket`: crea oportunidad CRM desde un ticket validado.
 
-## 1. Arquitectura
+## Arquitectura
 
 ```text
 Correo / ticket / Discuss en Odoo
@@ -18,92 +22,130 @@ Correo / ticket / Discuss en Odoo
   -> orquestadores (orchestration/)
   -> router semantico (routing/)
   -> agentes LangGraph (agents/)
-  -> Odoo XML-RPC / tools MCP locales
+  -> tools locales Odoo MCP
+  -> Odoo XML-RPC
 ```
 
 Componentes principales:
 
-- `api.py`: capa HTTP con FastAPI. Mantiene endpoints finos y delega la logica.
-- `orchestration/`: adapta payloads externos y decide que agente ejecutar.
-- `routing/`: router semantico determinista para clasificar texto como `budget` o `discard`.
-- `agents/intake_agent/`: convierte correos entrantes en tickets de helpdesk.
-- `agents/budget_agent/`: lee el contenido completo del ticket, selecciona productos reales del catalogo de Odoo y crea presupuestos.
-- `agents/general_agent/`: respuesta fija para mensajes descartados o no accionables.
-- `odoo/api_wrapper.py`: cliente XML-RPC para modelos de Odoo.
-- `odoo/odoo_mcp_server.py` y `odoo/mcp_client.py`: tools locales tipo MCP para catalogo, clientes y presupuestos.
-- `odoo/addons/`: addons Odoo incluidos o adaptados para helpdesk, correo entrante y asistente virtual.
+- `api.py`: aplicacion FastAPI, modelos de entrada/salida y endpoints HTTP.
+- `orchestration/`: adapta payloads de Odoo y decide que agente ejecutar.
+- `routing/`: router hibrido con reglas, keywords, ejemplos y embeddings opcionales.
+- `agents/intake_agent/`: convierte correos entrantes en tickets de Helpdesk.
+- `agents/budget_agent/`: selecciona productos reales de Odoo y crea presupuestos.
+- `agents/sales_agent/`: crea oportunidades comerciales en CRM.
+- `agents/assistant_chat_agent/`: genera respuestas conversacionales de seguimiento.
+- `agents/general_agent/`: respuesta de fallback cuando no hay intencion accionable.
+- `odoo/api.py`: cliente XML-RPC generico para modelos de Odoo.
+- `odoo/odoo_mcp_server.py`: tools locales para productos, clientes, tickets,
+  presupuestos, oportunidades y mensajes.
+- `odoo/addons/`: addons Odoo incluidos o adaptados para Helpdesk, correo entrante,
+  asistente virtual, notificaciones y flujos comerciales.
+- `scripts/bootstrap_odoo.py`: instalacion de modulos y datos demo.
+- `evals/`: benchmark multi-modelo y reportes comparativos con DeepEval.
 
-## 2. Flujo actual
+## Flujo Funcional
 
-### 2.1 Correo entrante
+### 1. Correo Entrante
 
-1. Odoo recibe un correo mediante `fetchmail`/Gmail.
-2. El addon `mail_inbox_input` crea un `mail.inbox.message`.
-3. El registro queda en estado `new`. No se procesa dentro del `create()`.
-4. El cron `Mail Inbox: Process intake queue` llama a `mail.inbox.message._cron_process_pending_intake()`.
-5. `_cron_process_pending_intake()` marca el registro como `processing` y llama a `_trigger_intake_processing()`.
-6. `_trigger_intake_processing()` construye el payload con `_build_backend_payload()` y llama a `POST /assistant/incoming-email`.
-7. `IncomingEmailOrchestrator` adapta el correo a `source_input`.
-8. `intake_agent` ejecuta este grafo:
-   - `prepare_input_node`: normaliza email/chat a texto.
-   - `extract_request_node`: pide al LLM un JSON estructurado.
-   - `prepare_ticket_node`: mapea tipo, equipo, categoria, prioridad y etiquetas.
+1. Odoo recibe un correo mediante `fetchmail`.
+2. El addon `mail_inbox_input` crea un registro `mail.inbox.message` en estado `new`.
+3. El cron procesa correos pendientes y llama al backend en
+   `/assistant/incoming-email`.
+4. `IncomingEmailOrchestrator` adapta el correo a `source_input`.
+5. `intake_agent` ejecuta su grafo:
+   - `prepare_input_node`: normaliza asunto, remitente y cuerpo.
+   - `extract_request_node`: extrae JSON estructurado con el LLM.
+   - `prepare_ticket_node`: asigna equipo, tipo, categoria, prioridad y etiquetas.
    - `create_ticket_node`: crea `helpdesk.ticket` en Odoo.
-9. El ticket creado desde email se crea con contexto `assistant_ticket_origin=email`, `skip_virtual_assistant_chat=True` y `skip_virtual_assistant_followup=True`.
-10. Por ese contexto, `helpdesk_virtual_assistant` no abre Discuss para ese ticket.
-11. `IncomingEmailOrchestrator` reutiliza `TicketEntryOrchestrator` solo para generar el texto de respuesta al correo.
-12. `mail_inbox_input` marca el email como `processed`, guarda `generated_ticket_id` y envia la respuesta por email.
+6. Si el correo ya fue procesado antes, el addon reutiliza el ticket generado.
+7. El correo queda como `processed` o `error`.
 
-### 2.2 Ticket nuevo en Helpdesk
+Los tickets creados desde email se crean con contexto interno para evitar abrir
+automaticamente el chat inicial del asistente.
 
-1. Odoo crea un `helpdesk.ticket`.
-2. `helpdesk_virtual_assistant` abre un chat `Ticket <id> - Asistente Virtual`.
-3. El addon publica un primer mensaje fijo de recepcion.
-4. El addon llama a `POST /assistant/ticket-entry`.
-5. `TicketEntryOrchestrator` construye texto enrutable y ejecuta `routing.semantic_router.router`.
-6. Si la ruta es `budget`, no crea presupuesto todavia. Responde que el presupuesto se creara cuando el ticket este en Ready for next stage.
-7. Si la ruta es `discard` o `issue`, responde `general_agent`.
+### 2. Ticket Manual En Helpdesk
 
-Importante: crear un ticket a mano no crea un presupuesto. El presupuesto se dispara despues, al pasar el ticket a Ready for next stage.
+1. Al crear un `helpdesk.ticket`, el addon `helpdesk_virtual_assistant` abre un
+   chat Discuss llamado `Ticket <id> - Asistente Virtual`.
+2. Publica un mensaje fijo de recepcion.
+3. Llama a `/assistant/ticket-entry`.
+4. `TicketEntryOrchestrator` construye el texto enrutable y usa el router.
+5. Segun la ruta:
+   - `budget`: responde que ayudara a concretar el presupuesto antes de generarlo.
+   - `sales`: responde que ayudara a concretar la oportunidad comercial.
+   - `discard`: pide mas contexto o deriva a soporte/presupuesto/ventas.
 
-### 2.3 Mensajes posteriores en Discuss
+Crear un ticket manual no crea todavia un presupuesto ni una oportunidad. La
+creacion real ocurre cuando el ticket se marca como `Ready for next stage`.
 
-1. El usuario escribe en el chat de Discuss abierto para el ticket.
-2. La extension de `mail.message` detecta canales con formato `Ticket <id> - Asistente Virtual`.
+### 3. Conversacion En Discuss
+
+1. El usuario responde en el chat del ticket.
+2. La extension de `mail.message` detecta el canal del asistente.
 3. Ignora mensajes escritos por el propio asistente para evitar bucles.
-4. Llama a `POST /assistant/discuss-message`.
-5. `DiscussMessageOrchestrator` enruta solo el mensaje nuevo, no el titulo historico del ticket.
-6. Si el mensaje pide presupuesto, responde que se creara al pasar el ticket a Ready for next stage.
-7. Si no es presupuesto, devuelve fallback general o no publica nada util.
+4. Llama a `/assistant/discuss-message` con el mensaje actual, contexto del ticket
+   e historial reciente.
+5. `DiscussMessageOrchestrator` conserva la ruta guardada si el mensaje es corto
+   o ambiguo.
+6. Si el usuario confirma con una respuesta afirmativa y hay contexto de
+   presupuesto o ventas, devuelve una accion `mark_ticket_ready`.
+7. El addon aplica esa accion escribiendo `kanban_state = "done"` en el ticket.
 
-### 2.4 Presupuesto al pasar a Ready for next stage
+Ese cambio de estado dispara el flujo de negocio correspondiente.
 
-El presupuesto se crea desde Odoo cuando cambia el ticket:
+### 4. Presupuesto Al Pasar A Ready
 
-1. El usuario mueve el ticket a Ready for next stage.
-2. `helpdesk.ticket.write()` detecta `kanban_state == "done"`.
-3. Si el ticket no tiene `assistant_budget_created` ni `assistant_sale_order_id`, llama a `_trigger_budget_from_ready_state()`.
-4. `_trigger_budget_from_ready_state()` llama a `POST /assistant/budget-from-ticket`.
-5. `BudgetFromTicketOrchestrator` ejecuta `budget_agent`.
+Cuando un ticket queda listo y la ruta resuelta es `budget`:
 
-El grafo de `budget_agent` ejecuta:
+1. Odoo llama a `/assistant/budget-from-ticket`.
+2. `BudgetFromTicketOrchestrator` ejecuta `budget_agent`.
+3. `budget_agent`:
+   - analiza el contenido completo del ticket;
+   - extrae empresa, resumen y requisitos;
+   - busca o crea el contacto en Odoo si hace falta;
+   - carga el catalogo real de productos;
+   - selecciona productos por heuristicas o LLM;
+   - crea o reutiliza un `sale.order`;
+   - evita duplicados con una referencia basada en el ticket;
+   - publica una respuesta en el chatter del ticket.
+4. Odoo guarda el identificador del presupuesto y el texto generado.
 
-1. `prepare_budget_node`: recibe el contenido del ticket tal cual, extrae `company_name`, `project_summary` y `requirements` con el LLM, obtiene el catalogo real de Odoo con `list_catalog()` y pide al LLM que seleccione `product_ids` validos.
-2. `create_odoo_quote_node`: crea o reutiliza un `sale.order`. Usa `client_order_ref = helpdesk-ticket-<ticket_id>` para evitar duplicados.
-3. `compose_budget_reply_node`: redacta una respuesta final con LLM. Si el LLM falla, usa una respuesta fallback.
+### 5. Oportunidad CRM Al Pasar A Ready
 
-El resultado incluye `quote_summary` con `sale_order_id`, productos, lineas, subtotal, total y moneda.
+Cuando la ruta resuelta es `sales`:
 
-Odoo guarda el resultado en el ticket:
+1. Odoo llama a `/assistant/sales-from-ticket`.
+2. `SalesFromTicketOrchestrator` ejecuta `sales_agent`.
+3. `sales_agent`:
+   - extrae objetivos comerciales del ticket con el LLM;
+   - resuelve o crea el contacto cliente;
+   - consulta perfil e historial reciente;
+   - comprueba si ya existe una oportunidad para ese ticket;
+   - crea una oportunidad `crm.lead` de tipo `opportunity`;
+   - redacta la respuesta final.
+4. Odoo guarda el identificador de la oportunidad y el texto generado.
 
-- `assistant_budget_created`
-- `assistant_sale_order_id`
-- `assistant_budget_response`
+## Router Semantico
 
-## 3. Requisitos
+El router vive en `routing/semantic_router.py` y devuelve una de estas rutas:
+
+- `budget`: presupuesto, precio, propuesta economica, implantacion, Odoo, CRM,
+  ERP, formacion, soporte mensual, desarrollo o automatizacion con intencion
+  economica clara.
+- `sales`: ventas, pipeline, leads, oportunidades, seguimiento comercial o
+  creacion de una oportunidad.
+- `discard`: saludos, pruebas, soporte/incidencias sin intencion comercial o
+  mensajes sin accion clara.
+
+La clasificacion combina reglas prioritarias, tokens sin stopwords, keywords,
+similitud con ejemplos mediante `difflib.SequenceMatcher` y embeddings de Ollama
+si se activan en la configuracion.
+
+## Requisitos
 
 - Python 3.13.x.
-- Docker y Docker Compose, si se quiere levantar Odoo localmente.
+- Docker y Docker Compose para levantar Odoo localmente.
 - Ollama en ejecucion para los nodos que usan LLM.
 - Un modelo local de Ollama, por ejemplo:
 
@@ -111,7 +153,12 @@ Odoo guarda el resultado en el ticket:
 ollama pull qwen3:4b
 ```
 
-## 4. Instalacion local
+El proyecto carga la configuracion desde archivos locales y/o el entorno de
+ejecucion. Este README no documenta nombres ni valores de configuracion sensible;
+usa los ejemplos del repositorio o la configuracion local del entorno donde se
+despliegue.
+
+## Instalacion Local
 
 Desde la raiz del proyecto:
 
@@ -122,37 +169,18 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## 5. Variables de entorno
+En bash:
 
-El codigo carga variables con `python-dotenv` desde `.env`.
-
-Ejemplo para ejecucion local:
-
-```env
-URL=http://localhost:8069
-DB=odoo
-USERNAME=odoo
-PASSWORD=multi-agente-agentes1
-
-ODOO_BASE_URL=http://localhost:8069/xmlrpc/2
-ODOO_DB=odoo
-ODOO_USERNAME=odoo
-ODOO_PASSWORD=multi-agente-agentes1
-
-OLLAMA_MODEL=qwen3:4b
-OLLAMA_TEMPERATURE=0
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Variables opcionales:
+## Ejecutar
 
-- `OLLAMA_MODEL_OVERRIDE`: cambia el modelo sin modificar `.env`.
-- `OLLAMA_TEMPERATURE_OVERRIDE`: cambia temperatura en ejecuciones puntuales.
-- `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`: se usan en `scripts/bootstrap_odoo.py` para configurar Gmail OAuth en Odoo.
-
-
-## 6. Ejecutar
-
-### 6.1 Backend local
+### Backend Local
 
 ```bash
 python api.py
@@ -160,6 +188,7 @@ python api.py
 
 La API queda disponible en:
 
+- Frontend estatico: `http://localhost:8000/`
 - Healthcheck: `http://localhost:8000/health`
 - Swagger: `http://localhost:8000/docs`
 
@@ -175,27 +204,25 @@ Respuesta esperada:
 {"status":"ok"}
 ```
 
-### 6.2 Odoo + backend con Docker
+### Odoo, Backend, Postgres Y Ollama Con Docker
 
 ```bash
 docker compose up --build
 ```
 
-Servicios:
+Servicios principales:
 
 - Backend: `http://localhost:8000`
 - Odoo: `http://localhost:8069`
+- Ollama: `http://localhost:11434`
 - Postgres: servicio interno `db`
 
-Dentro de Docker:
+El compose monta los addons desde `./odoo/addons` y reutiliza la cache local de
+Ollama. Descarga el modelo en el host antes de levantar el stack.
 
-- Odoo llama al backend por `http://assistant-backend:8000`.
-- El backend llama a Odoo por `http://web:8069/xmlrpc/2`.
-- Los addons se montan desde `./odoo/addons` en `/mnt/extra-addons`.
+### Bootstrap Inicial De Odoo
 
-### 6.3 Bootstrap inicial de Odoo
-
-Con Odoo levantado, ejecuta:
+Con Odoo levantado:
 
 ```powershell
 $env:PYTHONPATH=(Get-Location).Path
@@ -205,27 +232,29 @@ python .\scripts\bootstrap_odoo.py
 El bootstrap:
 
 - instala modulos base y addons custom;
-- instala `mail_inbox_input` y `helpdesk_virtual_assistant`;
+- instala Helpdesk, CRM, Ventas, correo entrante y asistente virtual;
 - crea productos presupuestables de referencia;
-- crea contactos demo;
-- crea equipos, tipos, categorias, estados y etiquetas de helpdesk;
+- crea contactos, tickets y correos demo;
+- crea equipos, tipos, categorias, estados y etiquetas de Helpdesk;
 - crea el usuario interno `Asistente Virtual`;
-- configura URLs internas para ticket entry, Discuss, incoming email y budget from ticket;
-- configura parametros de Gmail OAuth si existen en el entorno.
+- configura parametros internos para que Odoo llame al backend;
+- configura integracion Gmail si el entorno local la proporciona.
 
-## 7. Endpoints
+## Endpoints
 
-### 7.1 `GET /health`
-
-Devuelve:
+### `GET /health`
 
 ```json
 {"status":"ok"}
 ```
 
-### 7.2 `POST /assistant/incoming-email`
+### `GET /`
 
-Entrada usada por `mail_inbox_input` antes de crear el ticket definitivo.
+Sirve `frontend.html`, una interfaz estatica sencilla para probar el backend.
+
+### `POST /assistant/incoming-email`
+
+Procesa un correo entrante y crea un ticket de Helpdesk.
 
 ```bash
 curl -X POST http://localhost:8000/assistant/incoming-email \
@@ -245,17 +274,16 @@ Respuesta resumida:
 {
   "ok": true,
   "ticket_id": 321,
-  "final_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
-  "reply_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
-  "route_name": "budget",
+  "final_text": "Ticket creado correctamente en Odoo con id 321 y tipo budget.",
+  "reply_text": "",
+  "route_name": null,
   "agent_name": null,
   "normalized_request": {
     "company_name": "ACME",
     "project_summary": "Solicitud de presupuesto CRM",
     "requirements": ["CRM", "automatizacion comercial"],
     "urgency": "media",
-    "ticket_type": "budget",
-    "missing_information": []
+    "ticket_type": "budget"
   },
   "ticket_payload": {
     "team_name": "Presupuestos",
@@ -264,13 +292,13 @@ Respuesta resumida:
   },
   "warnings": [],
   "error": null,
-  "trace": ["incoming_email_received", "ticket_type_decided:budget", "ticket_created:321", "ticket_received", "route_decided:budget", "budget_waiting_ready_state"]
+  "trace": ["incoming_email_received", "ticket_type_decided:budget", "ticket_created:321", "email_reply_skipped"]
 }
 ```
 
-### 7.3 `POST /assistant/ticket-entry`
+### `POST /assistant/ticket-entry`
 
-Entrada usada cuando ya existe un `helpdesk.ticket`.
+Primera respuesta para un ticket ya creado.
 
 ```bash
 curl -X POST http://localhost:8000/assistant/ticket-entry \
@@ -292,7 +320,7 @@ Respuesta resumida:
   "ok": true,
   "route_name": "budget",
   "agent_name": null,
-  "reply_text": "He detectado que este ticket puede requerir presupuesto. Cuando lo marques como Ready for next stage creare el presupuesto.",
+  "reply_text": "He detectado una solicitud de presupuesto...",
   "normalized_request": {},
   "quote_summary": {},
   "error": null,
@@ -300,44 +328,47 @@ Respuesta resumida:
 }
 ```
 
-### 7.4 `POST /assistant/discuss-message`
+### `POST /assistant/discuss-message`
 
-Entrada usada para mensajes posteriores en Discuss.
+Procesa mensajes posteriores del chat Discuss.
 
 ```bash
 curl -X POST http://localhost:8000/assistant/discuss-message \
   -H "Content-Type: application/json" \
   -d '{
     "ticket_id": 100,
-    "ticket_title": "Solicitud inicial",
+    "ticket_title": "Solicitud presupuesto CRM",
+    "ticket_description": "Necesitamos CRM y automatizacion comercial.",
+    "assistant_route_name": "budget",
     "channel_id": 7,
     "channel_name": "Ticket 100 - Asistente Virtual",
     "message_id": 12,
     "author_name": "Ana",
     "author_email": "ana@acme.com",
-    "body": "Necesito presupuesto para CRM.",
+    "body": "Si, crealo",
+    "recent_messages": [],
     "thread_id": "manual-discuss-7"
   }'
 ```
 
-Respuesta resumida para un mensaje de presupuesto:
+Respuesta resumida cuando confirma la creacion:
 
 ```json
 {
   "ok": true,
   "route_name": "budget",
-  "agent_name": null,
-  "reply_text": "He detectado que este mensaje puede requerir presupuesto. Creare el presupuesto cuando el ticket este marcado como Ready for next stage.",
-  "normalized_request": {},
-  "quote_summary": {},
-  "error": null,
-  "trace": ["discuss_message_received", "route_decided:budget", "budget_waiting_ready_state"]
+  "agent_name": "assistant_chat_agent",
+  "reply_text": "Perfecto, marco el ticket como listo para generar el presupuesto.",
+  "actions": [
+    {"type": "mark_ticket_ready", "ticket_id": 100}
+  ],
+  "trace": ["discuss_message_received", "route_decided:budget", "budget_creation_confirmed", "response_built:discuss_orchestrator"]
 }
 ```
 
-### 7.5 `POST /assistant/budget-from-ticket`
+### `POST /assistant/budget-from-ticket`
 
-Entrada usada por `helpdesk_virtual_assistant` cuando un ticket pasa a Ready for next stage.
+Crea o reutiliza un presupuesto en Odoo desde un ticket validado.
 
 ```bash
 curl -X POST http://localhost:8000/assistant/budget-from-ticket \
@@ -359,20 +390,17 @@ Respuesta resumida:
 {
   "ok": true,
   "agent_name": "budget_agent",
-  "reply_text": "He generado un presupuesto inicial en Odoo...",
+  "reply_text": "He creado un presupuesto inicial para ACME...",
   "sale_order_id": 55,
   "normalized_request": {
     "company_name": "ACME",
     "project_summary": "Solicitud presupuesto CRM",
-    "requirements": ["CRM", "automatizacion comercial"]
+    "requirements": ["crm", "automatizacion comercial"]
   },
   "quote_summary": {
     "sale_order_id": 55,
     "client_order_ref": "helpdesk-ticket-100",
-    "selected_products": [
-      {"id": 3, "name": "CRM", "default_code": "crm"}
-    ],
-    "total": 1200.0,
+    "total": 3000.0,
     "currency": "EUR"
   },
   "error": null,
@@ -380,92 +408,80 @@ Respuesta resumida:
 }
 ```
 
-## 8. Router semantico
+### `POST /assistant/sales-from-ticket`
 
-El router vive en `routing/semantic_router.py` y usa:
-
-- normalizacion de texto y acentos;
-- tokens sin stopwords;
-- coincidencias por keywords;
-- similitud con utterances mediante `difflib.SequenceMatcher`;
-- prioridad para señales comerciales claras de presupuesto.
-
-Rutas actuales:
-
-- `budget`: presupuesto, precio, propuesta, implantacion Odoo, CRM, ERP, ventas, formacion, soporte mensual, desarrollo a medida.
-- `discard`: saludo, prueba, consulta general o mensaje sin accion clara.
-
-## 9. Tests
-
-### 9.1 Tests rapidos sin Odoo real
-
-Estos tests usan fakes/mocks y sirven para validar router, orquestadores HTTP y utilidades de evaluacion:
+Crea o reutiliza una oportunidad CRM desde un ticket validado.
 
 ```bash
-python -m pytest -q \
-  tests/test_router.py \
-  tests/test_assistant_entry.py \
-  tests/test_assistant_email.py \
-  tests/test_assistant_discuss.py \
-  tests/test_intake_partner_assignment.py \
-  tests/test_deepeval_eval.py
+curl -X POST http://localhost:8000/assistant/sales-from-ticket \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticket_id": 101,
+    "title": "Mejorar pipeline comercial",
+    "description": "Queremos organizar leads y seguimiento de oportunidades.",
+    "partner_id": 12,
+    "partner_name": "ACME",
+    "partner_email": "ana@acme.com",
+    "thread_id": "manual-sales-101"
+  }'
 ```
 
-En PowerShell:
+Respuesta resumida:
+
+```json
+{
+  "ok": true,
+  "agent_name": "sales_agent",
+  "reply_text": "He creado la oportunidad comercial en CRM...",
+  "crm_lead_id": 77,
+  "crm_summary": {
+    "id": 77,
+    "name": "ACME - Mejorar pipeline comercial",
+    "type": "opportunity"
+  },
+  "error": null,
+  "trace": ["sales_ticket_received", "agent_completed:sales_agent"]
+}
+```
+
+## Tests
+
+Tests rapidos sin Odoo real:
 
 ```powershell
-python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py tests/test_deepeval_eval.py
+python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_assistant_sales.py tests/test_intake_partner_assignment.py tests/test_deepeval_eval.py tests/test_contract_validation.py tests/test_multi_model_eval_reporting.py
 ```
 
-### 9.2 Tests de integracion con Odoo
-
-Los tests marcados con `@pytest.mark.integration` necesitan Odoo levantado, datos bootstrap y variables de entorno correctas.
-
-```bash
-python -m pytest -q -m integration
-```
-
-Para excluirlos:
+Excluir integracion:
 
 ```bash
 python -m pytest -q -m "not integration"
 ```
 
-### 9.3 Tests por area
+Tests con Odoo real levantado y datos bootstrap:
 
 ```bash
-# Router semantico
-python -m pytest -q tests/test_router.py
-
-# Orquestadores de API actuales y asignacion de empresas
-python -m pytest -q tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py
-
-# Agente intake contra Odoo real
-python -m pytest -q tests/test_intake_agent.py
-
-# Agente de presupuestos contra Odoo real
-python -m pytest -q tests/test_budget_agent.py
-
-# Evaluacion DeepEval estructural
-python -m pytest -q tests/test_deepeval_eval.py
+python -m pytest -q -m integration
 ```
 
-Aviso: `tests/test_api.py` hay que modificarlo o eliminarlo
+Por area:
 
-## 10. Calidad y formato
+```bash
+python -m pytest -q tests/test_router.py
+python -m pytest -q tests/test_assistant_entry.py tests/test_assistant_discuss.py tests/test_assistant_sales.py
+python -m pytest -q tests/test_assistant_email.py tests/test_intake_partner_assignment.py
+python -m pytest -q tests/test_intake_agent.py
+python -m pytest -q tests/test_budget_agent.py
+python -m pytest -q tests/test_deepeval_eval.py tests/test_contract_validation.py tests/test_multi_model_eval_reporting.py
+```
+
+## Calidad Y Formato
 
 El proyecto configura Ruff, Mypy y Pytest en `pyproject.toml`.
 
-Comandos utiles:
-
 ```bash
-# Formato
 python -m ruff format .
-
-# Lint con autofix
 python -m ruff check . --fix
-
-# Type checking
 python -m mypy .
 ```
 
@@ -477,21 +493,18 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-## 11. Evaluaciones y benchmark de modelos
+## Evaluaciones Multi-Modelo
 
-DeepEval se usa en `shared/deepeval_eval.py` con:
+DeepEval se usa en `shared/deepeval_eval.py` y los reportes agregados se generan
+desde `evals/reporting.py`.
 
-- `AnswerRelevancyMetric`;
-- `GEval` con criterio de calidad de presupuesto;
-- modelo evaluador local mediante Ollama.
-
-Ejecutar tests estructurales de DeepEval:
+Ejecutar benchmark con modelos configurados en `evals/models.yaml`:
 
 ```bash
-python -m pytest -q tests/test_deepeval_eval.py
+python -m evals.run_multi_model_eval
 ```
 
-Ejecutar benchmark multi-modelo:
+Ejecutar benchmark con modelos explicitos:
 
 ```bash
 python -m evals.run_multi_model_eval \
@@ -500,45 +513,37 @@ python -m evals.run_multi_model_eval \
   --out-dir evals/reports
 ```
 
-Tambien puedes editar `evals/models.yaml` y ejecutar:
+La salida se guarda en `evals/reports/` como JSON detallado y Markdown
+comparativo.
 
-```bash
-python -m evals.run_multi_model_eval
-```
-
-Salida:
-
-- JSON detallado en `evals/reports/`.
-- Markdown comparativo en `evals/reports/`.
-- ganador global segun las reglas de `evals/reporting.py`.
-
-Guia ampliada: `docs/model_evaluation_guide.md`.
-
-## 12. Estructura del repositorio
+## Estructura Del Repositorio
 
 ```text
 .
-├── api.py
-├── agents/
-│   ├── budget_agent/
-│   ├── general_agent/
-│   └── intake_agent/
-├── orchestration/
-├── routing/
-├── shared/
-├── odoo/
-│   ├── addons/
-│   ├── api_wrapper.py
-│   ├── mcp_client.py
-│   └── odoo_mcp_server.py
-├── scripts/
-│   └── bootstrap_odoo.py
-├── tests/
-├── evals/
-└── docs/
+|-- api.py
+|-- frontend.html
+|-- agents/
+|   |-- assistant_chat_agent/
+|   |-- budget_agent/
+|   |-- general_agent/
+|   |-- intake_agent/
+|   `-- sales_agent/
+|-- orchestration/
+|-- routing/
+|-- shared/
+|-- odoo/
+|   |-- addons/
+|   |-- api.py
+|   |-- mcp_client.py
+|   `-- odoo_mcp_server.py
+|-- scripts/
+|   `-- bootstrap_odoo.py
+|-- tests/
+|-- evals/
+`-- docs/
 ```
 
-## 13. Troubleshooting
+## Troubleshooting
 
 ### `ModuleNotFoundError`
 
@@ -548,86 +553,63 @@ Activa el entorno virtual e instala dependencias:
 python -m pip install -r requirements.txt
 ```
 
-### El backend no conecta con Odoo
+### El Backend No Conecta Con Odoo
 
-Comprueba:
+Comprueba que Odoo este levantado, que la base de datos exista, que los addons
+esten instalados y que la configuracion local apunte a la URL correcta tanto en
+local como dentro de Docker.
 
-- que Odoo este levantado en `http://localhost:8069` o en `http://web:8069` dentro de Docker;
-- que `ODOO_BASE_URL`, `ODOO_DB`, `ODOO_USERNAME` y `ODOO_PASSWORD` sean correctos;
-- que la base de datos exista;
-- que los addons esten instalados y actualizados.
+### El LLM No Responde
 
-### El LLM no responde
-
-Comprueba:
+Comprueba que Ollama este levantado y que el modelo este descargado:
 
 ```bash
 ollama list
 ollama run qwen3:4b
 ```
 
-Y revisa `OLLAMA_MODEL`.
+### Docker Compose Falla Al Iniciar Ollama
 
-### Docker Compose falla por variables
-
-El compose usa variables de entorno para interpolar credenciales y tambien referencia `./shared/.env`. Crea ese archivo, exporta variables en la shell o ajusta `docker-compose.yml`.
-
-### El router devuelve `discard`
-
-El router solo tiene rutas `budget` y `discard`. Para que algo sea presupuesto debe contener señales comerciales claras, por ejemplo `presupuesto`, `precio`, `propuesta`, junto a alcance como `CRM`, `Odoo`, `ERP`, `implantacion`, `ventas` o `automatizacion`.
-
-### El presupuesto no encuentra productos
-
-`budget_agent` obtiene el catalogo real con `list_catalog()` y el LLM elige ids de producto de esa lista. Ejecuta el bootstrap o crea productos activos con `default_code`, por ejemplo:
-
-- `crm`
-- `automatizacion_comercial`
-- `helpdesk`
-- `sales`
-- `implantacion_odoo`
-- `formacion`
-- `soporte_mensual`
-- `desarrollo_medida`
-
-### El presupuesto no se crea al crear un ticket manual
-
-Es el comportamiento esperado. El ticket manual solo abre el chat de asistente y llama a `/assistant/ticket-entry`.
-
-El presupuesto se crea cuando el ticket pasa a Ready for next stage, que actualmente se detecta con:
-
-```python
-kanban_state == "done"
-```
-
-Si al moverlo a Ready no se crea presupuesto, revisa:
-
-- que aparezca una llamada a `POST /assistant/budget-from-ticket` en los logs;
-- que el cambio de etapa escriba realmente `kanban_state = "done"`;
-- que el ticket no tenga ya `assistant_budget_created` o `assistant_sale_order_id`;
-- que el catalogo tenga productos activos con `default_code`;
-- que el backend pueda contactar con Odoo y Ollama.
-
-## 14. Comandos rapidos
+El servicio de inicializacion comprueba que el modelo ya exista en la cache local
+montada. Descargalo antes de levantar Docker:
 
 ```bash
-# Instalar dependencias
+ollama pull qwen3:4b
+```
+
+### El Router Devuelve `discard`
+
+El router exige senales claras. Para `budget` necesita intencion economica y
+alcance. Para `sales` necesita intencion comercial, leads, oportunidades o
+pipeline. Una incidencia de soporte sin intencion comercial se descarta para los
+flujos de negocio automaticos.
+
+### El Presupuesto No Encuentra Productos
+
+Ejecuta el bootstrap o crea productos activos en Odoo con codigo interno. El
+agente solo selecciona productos existentes en el catalogo real.
+
+### El Presupuesto U Oportunidad No Se Crea Al Crear El Ticket
+
+Es el comportamiento esperado. El registro de negocio se crea al confirmar desde
+Discuss o al marcar el ticket como `Ready for next stage`.
+
+Si no se crea al marcarlo como listo, revisa:
+
+- que exista una ruta guardada `budget` o `sales`, o que el texto del ticket
+  permita resolverla;
+- que el ticket no tenga ya un registro de negocio asociado;
+- que el backend pueda contactar con Odoo y Ollama;
+- que el catalogo de productos exista para presupuestos;
+- que CRM este instalado para oportunidades comerciales.
+
+## Comandos Rapidos
+
+```bash
 python -m pip install -r requirements.txt
-
-# Ejecutar backend
 python api.py
-
-# Levantar Odoo + backend + Postgres
 docker compose up --build
-
-# Bootstrap de Odoo
 python scripts/bootstrap_odoo.py
-
-# Tests rapidos
-python -m pytest -q tests/test_router.py tests/test_assistant_entry.py tests/test_assistant_email.py tests/test_assistant_discuss.py tests/test_intake_partner_assignment.py tests/test_deepeval_eval.py
-
-# Tests de integracion
-python -m pytest -q -m integration
-
-# Benchmark modelos
+python -m pytest -q -m "not integration"
 python -m evals.run_multi_model_eval
 ```

@@ -79,9 +79,8 @@ class MailInboxMessage(models.Model):
             record._safe_process()
         return True
     
-    @api.model
     def action_fetch_emails(self, *args, **kwargs):
-        """Ejecuta el fetch estándar de Odoo desde la vista lista."""
+        """Ejecuta fetchmail, procesa pendientes y reabre la lista con aviso."""
         servers = self.env["fetchmail.server"].sudo().search([("active", "=", True)])
 
         if not servers:
@@ -99,7 +98,9 @@ class MailInboxMessage(models.Model):
         for server in servers:
             server.fetch_mail()
 
-        self.env["mail.inbox.message"].sudo()._cron_process_pending_intake(limit=20)
+        #self.env["mail.inbox.message"].sudo()._cron_process_pending_intake(limit=20)
+
+        action = self.env.ref("mail_inbox_input.action_mail_inbox_message").sudo().read()[0]
 
         return {
             "type": "ir.actions.client",
@@ -109,6 +110,7 @@ class MailInboxMessage(models.Model):
                 "message": "Odoo ha buscado correos nuevos y procesado los pendientes.",
                 "type": "success",
                 "sticky": False,
+                "next": action,
             },
         }
 

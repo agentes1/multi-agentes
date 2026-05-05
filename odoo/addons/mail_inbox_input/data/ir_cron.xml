@@ -6,7 +6,7 @@
         <field name="model_id" ref="model_mail_inbox_message"/>
         <field name="state">code</field>
         <field name="code">model._cron_process_pending_intake()</field>
-        <field name="interval_number">1</field>
+        <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
         <field name="active">1</field>
     </record>
