@@ -6,6 +6,14 @@
         <field name="model">mail.inbox.message</field>
         <field name="arch" type="xml">
             <list string="Incoming Mails">
+                <header>
+                    <button name="action_fetch_emails"
+                            type="object"
+                            string="Fetch Emails"
+                            class="btn-primary"
+                            display="always"/>
+                </header>
+
                 <field name="received_date"/>
                 <field name="subject"/>
                 <field name="email_from"/>
