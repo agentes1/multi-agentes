@@ -90,6 +90,7 @@ class MailMessage(models.Model):
             "ticket_category": self._get_related_name(ticket, "category_id"),
             "ticket_type": self._get_related_name(ticket, "type_id"),
             "ticket_stage": self._get_related_name(ticket, "stage_id"),
+            "assistant_route_name": ticket.assistant_route_name or "",
             "channel_id": channel.id,
             "channel_name": channel.name or "",
             "message_id": self.id,

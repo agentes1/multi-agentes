@@ -1,147 +1,112 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from difflib import SequenceMatcher
 import math
 import re
 import unicodedata
+from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from langchain_ollama import OllamaEmbeddings
 
 from routing.routes import RouteDefinition, discard_route, routes
-from shared.config import (
-    OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
-    ROUTER_EMBED_MODEL,
-    ROUTER_EMBEDDINGS_ENABLED,
-)
+from shared.config import OLLAMA_BASE_URL, OLLAMA_MODEL, ROUTER_EMBED_MODEL, ROUTER_EMBEDDINGS_ENABLED
 
-_STOPWORDS = {
-    "a",
-    "al",
-    "con",
-    "de",
-    "del",
-    "el",
-    "en",
-    "es",
-    "esta",
-    "este",
-    "la",
-    "las",
-    "lo",
-    "los",
-    "mi",
-    "necesito",
-    "necesitamos",
-    "para",
-    "por",
-    "que",
-    "queremos",
-    "se",
-    "sin",
-    "su",
-    "un",
-    "una",
-    "y",
+
+# Palabras sin valor para comparar intención.
+STOPWORDS = {
+    "a", "al", "con", "de", "del", "el", "en", "es", "esta", "este", "la", "las",
+    "lo", "los", "mi", "necesito", "necesitamos", "para", "por", "que", "queremos",
+    "se", "sin", "su", "un", "una", "y",
 }
 
-_BUDGET_COMMERCIAL_TERMS = {
-    "presupuesto",
-    "precio",
-    "coste",
-    "costo",
-    "cotizacion",
-    "cotización",
-    "propuesta",
+# Presupuesto solo debe activarse si hay intención económica clara.
+BUDGET_COMMERCIAL_TERMS = {
+    "presupuesto", "precio", "coste", "costo", "cotizacion", "cotización",
+    "propuesta", "propuesta económica", "cuanto cuesta", "cuánto cuesta",
 }
 
-_BUDGET_SCOPE_TERMS = {
-    "crm",
-    "erp",
-    "odoo",
-    "implantar",
-    "implantacion",
-    "implantación",
-    "modulos",
-    "módulos",
-    "automatizacion",
-    "automatización",
+# Alcance típico de un presupuesto, pero no basta por sí solo.
+BUDGET_SCOPE_TERMS = {
+    "crm", "erp", "odoo", "implantar", "implantacion", "implantación", "modulos",
+    "módulos", "automatizacion", "automatización", "formacion", "formación",
+    "desarrollo", "soporte mensual",
 }
 
-_SALES_TERMS = {
-    "ventas",
-    "comercial",
-    "pipeline",
-    "lead",
-    "leads",
-    "oportunidades",
-    "captacion",
-    "captación",
-    "seguimiento comercial",
-    "equipo comercial",
+# Acciones claras de ventas. Estas deben ganar antes que discard.
+SALES_ACTION_TERMS = {
+    "crear lead", "nuevo lead", "crear oportunidad", "nueva oportunidad",
+    "pipeline", "ventas", "venta", "seguimiento comercial", "equipo comercial",
+    "contacto comercial", "cliente interesado", "prospecto",
 }
 
-_NON_BUDGET_BLOCKER_TERMS = {
-    "error",
-    "problema",
-    "incidencia",
-    "falla",
-    "fallo",
-    "bug",
-    "no funciona",
-    "roto",
-    "bloqueado",
-    "bloquea",
-    "soporte",
-    "ayuda",
+# Términos generales de ventas para scoring rápido.
+SALES_TERMS = {
+    "ventas", "venta", "comercial", "pipeline", "lead", "leads", "oportunidad",
+    "oportunidades", "captacion", "captación", "seguimiento comercial",
+    "equipo comercial", "crm",
+}
+
+# Si aparece esto sin intención económica ni comercial clara, no es presupuesto.
+SUPPORT_TERMS = {
+    "error", "problema", "incidencia", "falla", "fallo", "bug", "no funciona",
+    "roto", "bloqueado", "bloquea", "soporte", "ayuda",
 }
 
 
 @dataclass(frozen=True)
 class RouteMatch:
+    """Resultado estable del router."""
     name: str
     score: float
     utterance: str | None = None
 
 
-def _env_flag(value: str | None) -> bool:
+def env_flag(value: str | None) -> bool:
+    """Convierte una variable de entorno en booleano."""
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    if not left or not right or len(left) != len(right):
-        return 0.0
-
-    dot = sum(a * b for a, b in zip(left, right))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return dot / (left_norm * right_norm)
-
-
-def _strip_accents(value: str) -> str:
+def strip_accents(value: str) -> str:
+    """Quita tildes para comparar mejor."""
     normalized = unicodedata.normalize("NFKD", value)
     return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
-def _normalize_text(value: str) -> str:
-    normalized = _strip_accents(str(value).lower().strip())
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized)
-    return normalized.strip()
+def normalize_text(value: str) -> str:
+    """Normaliza texto para rutas."""
+    text = strip_accents(str(value or "").lower().strip())
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def _tokenize(value: str) -> set[str]:
-    return {
-        token
-        for token in _normalize_text(value).split()
-        if len(token) > 2 and token not in _STOPWORDS
-    }
+def tokenize(value: str) -> set[str]:
+    """Tokeniza quitando palabras poco útiles."""
+    return {t for t in normalize_text(value).split() if len(t) > 2 and t not in STOPWORDS}
+
+
+def has_any(text: str, terms: set[str]) -> bool:
+    """Comprueba si aparece alguna frase normalizada."""
+    return any(normalize_text(term) in text for term in terms)
+
+
+def count_hits(text: str, terms: set[str]) -> int:
+    """Cuenta coincidencias por frase."""
+    return sum(normalize_text(term) in text for term in terms)
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    """Calcula similitud coseno entre dos vectores."""
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    return 0.0 if not left_norm or not right_norm else dot / (left_norm * right_norm)
 
 
 class SemanticTicketRouter:
+    """Router híbrido: reglas claras primero, scoring después."""
+
     def __init__(
         self,
         route_definitions: tuple[RouteDefinition, ...],
@@ -149,159 +114,153 @@ class SemanticTicketRouter:
         embeddings_enabled: bool | None = None,
     ):
         self._routes = route_definitions
-        self._embeddings_enabled = (
-            _env_flag(ROUTER_EMBEDDINGS_ENABLED) if embeddings_enabled is None else embeddings_enabled
-        )
+        self._embeddings_enabled = env_flag(ROUTER_EMBEDDINGS_ENABLED) if embeddings_enabled is None else embeddings_enabled
         self._embeddings_client = embeddings_client
         self._route_embeddings: dict[str, list[tuple[str, list[float]]]] = {}
         self._embedding_failed = False
 
     def __call__(self, text: str) -> RouteMatch:
-        normalized_text = _normalize_text(text)
-        text_tokens = _tokenize(text)
+        """Devuelve la mejor ruta para el texto recibido."""
+        normalized_text = normalize_text(text)
+        text_tokens = tokenize(text)
+
         priority_match = self._match_priority_route(normalized_text, text_tokens)
-        if priority_match is not None:
+        if priority_match:
             return priority_match
-        best_match = RouteMatch(name=discard_route.name, score=0.0, utterance=None)
 
-        for route in self._routes:
-            candidate_match = self._score_route(route, normalized_text, text_tokens)
-            if candidate_match.score > best_match.score:
-                best_match = candidate_match
+        best_match = self._best_scored_route(normalized_text, text_tokens)
+        return self._apply_threshold(best_match)
 
-        if best_match.name != discard_route.name:
-            route_threshold = next(
-                route.threshold for route in self._routes if route.name == best_match.name
-            )
-            if best_match.score < route_threshold:
-                return RouteMatch(name=discard_route.name, score=best_match.score, utterance=None)
-
-        return best_match
-
-    def _match_priority_route(
-        self,
-        normalized_text: str,
-        text_tokens: set[str],
-    ) -> RouteMatch | None:
-        budget_route = next((route for route in self._routes if route.name == "budget"), None)
-        sales_route = next((route for route in self._routes if route.name == "sales"), None)
+    def _match_priority_route(self, text: str, tokens: set[str]) -> RouteMatch | None:
+        """Aplica reglas fuertes antes del scoring semántico."""
+        budget_route = self._route("budget")
+        sales_route = self._route("sales")
         if not budget_route:
             return None
 
-        commercial_hits = sum(
-            1 for term in _BUDGET_COMMERCIAL_TERMS if _normalize_text(term) in normalized_text
-        )
-        scope_hits = sum(
-            1 for term in _BUDGET_SCOPE_TERMS if _normalize_text(term) in normalized_text
-        )
-        blocker_hits = sum(
-            1 for term in _NON_BUDGET_BLOCKER_TERMS if _normalize_text(term) in normalized_text
-        )
-        sales_hits = sum(
-            1 for term in _SALES_TERMS if _normalize_text(term) in normalized_text
-        )
-        total_keyword_hits = len(text_tokens & _tokenize(" ".join(budget_route.keywords)))
+        commercial_hits = count_hits(text, BUDGET_COMMERCIAL_TERMS)
+        scope_hits = count_hits(text, BUDGET_SCOPE_TERMS)
+        support_hits = count_hits(text, SUPPORT_TERMS)
+        sales_hits = count_hits(text, SALES_TERMS)
+        budget_keyword_hits = len(tokens & tokenize(" ".join(budget_route.keywords)))
 
-        if blocker_hits >= 1 and commercial_hits == 0:
-            return RouteMatch(name=discard_route.name, score=1.0, utterance="priority_discard_match")
+        # 1. Sales explícito: no debe morir como discard por llevar "soporte" o "incidencia".
+        if sales_route and (has_any(text, SALES_ACTION_TERMS) or sales_hits >= 2) and commercial_hits == 0:
+            return RouteMatch("sales", 1.0, "priority_sales_match")
 
-        if (commercial_hits >= 1 and scope_hits >= 1) or (
-            commercial_hits >= 1 and total_keyword_hits >= 2
-        ):
-            return RouteMatch(name="budget", score=1.0, utterance="priority_budget_match")
+        # 2. Presupuesto explícito: necesita intención económica, no solo "Odoo" o "CRM".
+        if commercial_hits >= 1 and (scope_hits >= 1 or budget_keyword_hits >= 2):
+            return RouteMatch("budget", 1.0, "priority_budget_match")
 
-        if sales_route and sales_hits >= 2 and commercial_hits == 0:
-            return RouteMatch(name="sales", score=1.0, utterance="priority_sales_match")
+        # 3. Soporte claro sin intención comercial/económica: no es budget ni sales.
+        if support_hits >= 1 and commercial_hits == 0 and sales_hits == 0:
+            return RouteMatch(discard_route.name, 1.0, "priority_support_discard_match")
 
         return None
 
-    def _score_route(
-        self,
-        route: RouteDefinition,
-        normalized_text: str,
-        text_tokens: set[str],
-    ) -> RouteMatch:
-        keyword_hits = sum(
-            1 for keyword in route.keywords if _normalize_text(keyword) in normalized_text
-        )
+    def _best_scored_route(self, text: str, tokens: set[str]) -> RouteMatch:
+        """Calcula la mejor ruta por keywords, ejemplos y embeddings."""
+        best = RouteMatch(discard_route.name, 0.0)
+
+        for route in self._routes:
+            match = self._score_route(route, text, tokens)
+            if match.score > best.score:
+                best = match
+
+        return best
+
+    def _apply_threshold(self, match: RouteMatch) -> RouteMatch:
+        """Descarta rutas que no superan su umbral."""
+        if match.name == discard_route.name:
+            return match
+
+        route = self._route(match.name)
+        if route and match.score >= route.threshold:
+            return match
+
+        return RouteMatch(discard_route.name, match.score)
+
+    def _score_route(self, route: RouteDefinition, text: str, tokens: set[str]) -> RouteMatch:
+        """Puntúa una ruta usando keywords, utterances y embeddings."""
+        keyword_hits = sum(normalize_text(k) in text for k in route.keywords)
         keyword_score = keyword_hits / max(len(route.keywords), 1)
 
-        best_utterance = None
-        best_utterance_score = 0.0
-        for utterance in route.utterances:
-            utterance_score = self._score_utterance(
-                normalized_text=normalized_text,
-                text_tokens=text_tokens,
-                utterance=utterance,
-            )
-            if utterance_score > best_utterance_score:
-                best_utterance_score = utterance_score
-                best_utterance = utterance
+        best_utterance, utterance_score = self._best_utterance(route, text, tokens)
+        embedding_score, embedding_utterance = self._score_route_embeddings(route, text)
 
-        embedding_score, embedding_utterance = self._score_route_embeddings(route, normalized_text)
-        if embedding_score > best_utterance_score and embedding_utterance:
+        if embedding_score > utterance_score and embedding_utterance:
             best_utterance = embedding_utterance
 
-        score = round(
-            (best_utterance_score * 0.55) + (keyword_score * 0.20) + (embedding_score * 0.25),
-            4,
-        )
-        return RouteMatch(name=route.name, score=score, utterance=best_utterance)
+        score = round((utterance_score * 0.55) + (keyword_score * 0.20) + (embedding_score * 0.25), 4)
+        return RouteMatch(route.name, score, best_utterance)
+
+    def _best_utterance(self, route: RouteDefinition, text: str, tokens: set[str]) -> tuple[str | None, float]:
+        """Busca el ejemplo más parecido dentro de una ruta."""
+        best_text, best_score = None, 0.0
+
+        for utterance in route.utterances:
+            score = self._score_utterance(text, tokens, utterance)
+            if score > best_score:
+                best_text, best_score = utterance, score
+
+        return best_text, best_score
 
     @staticmethod
-    def _score_utterance(normalized_text: str, text_tokens: set[str], utterance: str) -> float:
-        normalized_utterance = _normalize_text(utterance)
-        utterance_tokens = _tokenize(utterance)
-        if not normalized_text or not normalized_utterance:
+    def _score_utterance(text: str, tokens: set[str], utterance: str) -> float:
+        """Compara el texto con un ejemplo de entrenamiento."""
+        normalized_utterance = normalize_text(utterance)
+        utterance_tokens = tokenize(utterance)
+        if not text or not normalized_utterance:
             return 0.0
 
-        overlap = len(text_tokens & utterance_tokens) / max(len(utterance_tokens), 1)
-        sequence = SequenceMatcher(None, normalized_text, normalized_utterance).ratio()
-        contains_bonus = 1.0 if normalized_utterance in normalized_text else 0.0
+        overlap = len(tokens & utterance_tokens) / max(len(utterance_tokens), 1)
+        sequence = SequenceMatcher(None, text, normalized_utterance).ratio()
+        contains_bonus = 1.0 if normalized_utterance in text else 0.0
         return max(overlap, (overlap * 0.6) + (sequence * 0.4), contains_bonus)
 
-    def _score_route_embeddings(self, route: RouteDefinition, normalized_text: str) -> tuple[float, str | None]:
-        if not self._embeddings_enabled or self._embedding_failed or not normalized_text:
+    def _score_route_embeddings(self, route: RouteDefinition, text: str) -> tuple[float, str | None]:
+        """Usa embeddings si están activos; si fallan, los desactiva."""
+        if not self._embeddings_enabled or self._embedding_failed or not text:
             return 0.0, None
 
         try:
             client = self._get_embeddings_client()
-            if client is None:
+            if not client:
                 return 0.0, None
 
             if route.name not in self._route_embeddings:
-                utterance_vectors = client.embed_documents([_normalize_text(item) for item in route.utterances])
-                self._route_embeddings[route.name] = list(zip(route.utterances, utterance_vectors))
+                vectors = client.embed_documents([normalize_text(item) for item in route.utterances])
+                self._route_embeddings[route.name] = list(zip(route.utterances, vectors))
 
-            text_vector = client.embed_query(normalized_text)
+            text_vector = client.embed_query(text)
         except Exception:
             self._embedding_failed = True
             return 0.0, None
 
-        best_score = 0.0
-        best_utterance = None
-        for utterance, utterance_vector in self._route_embeddings.get(route.name, []):
-            similarity = _cosine_similarity(text_vector, utterance_vector)
-            normalized_similarity = max(0.0, min(1.0, (similarity + 1.0) / 2.0))
-            if normalized_similarity > best_score:
-                best_score = normalized_similarity
-                best_utterance = utterance
+        best_score, best_utterance = 0.0, None
+        for utterance, vector in self._route_embeddings.get(route.name, []):
+            similarity = cosine_similarity(text_vector, vector)
+            score = max(0.0, min(1.0, (similarity + 1.0) / 2.0))
+            if score > best_score:
+                best_score, best_utterance = score, utterance
 
         return best_score, best_utterance
 
     def _get_embeddings_client(self) -> OllamaEmbeddings | None:
-        if self._embeddings_client is not None:
+        """Crea el cliente de embeddings solo cuando se necesita."""
+        if self._embeddings_client:
             return self._embeddings_client
 
         model_name = ROUTER_EMBED_MODEL or OLLAMA_MODEL
         if not model_name:
             return None
 
-        self._embeddings_client = OllamaEmbeddings(
-            model=model_name,
-            base_url=OLLAMA_BASE_URL,
-        )
+        self._embeddings_client = OllamaEmbeddings(model=model_name, base_url=OLLAMA_BASE_URL)
         return self._embeddings_client
+
+    def _route(self, name: str) -> RouteDefinition | None:
+        """Busca una ruta por nombre."""
+        return next((route for route in self._routes if route.name == name), None)
 
 
 router = SemanticTicketRouter(routes)

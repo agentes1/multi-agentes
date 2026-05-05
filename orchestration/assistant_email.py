@@ -20,11 +20,27 @@ class IncomingEmailOrchestrator:
         source_input = build_email_source_input(payload)
         thread_id = thread_id or f"incoming-email-{payload.get('inbox_id', 'unknown')}"
 
+        partner_id = payload.get("notify_partner_id") or payload.get("partner_id") or payload.get("author_id")
+
+        if partner_id:
+            from shared.odoo_notifier import OdooNotifier
+            OdooNotifier().notify_partner(
+                partner_id=partner_id,
+                title="Agente Intake",
+                message="Se ha recibido un nuevo correo. Iniciando procesamiento...",
+                type="info",
+            )
+
         result = await build_intake_graph().ainvoke(
             {"source_input": source_input},
-            config={"configurable": {"deps": deps, "thread_id": thread_id}},
+            config={
+                "configurable": {
+                    "deps": deps,
+                    "thread_id": thread_id,
+                    "partner_id": partner_id,
+                }
+            },
         )
-
         if result.get("error"):
             return build_email_response(result, ok=False, trace=trace + ["intake_failed"])
 

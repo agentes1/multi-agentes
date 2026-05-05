@@ -64,6 +64,7 @@ class AssistantDiscussMessageRequest(BaseModel):
     ticket_category: str = ""
     ticket_type: str = ""
     ticket_stage: str = ""
+    assistant_route_name: str = ""
     channel_id: int | None = None
     channel_name: str = ""
     message_id: int | None = None
@@ -88,6 +89,7 @@ class AssistantDiscussMessageResponse(BaseModel):
 
 class AssistantIncomingEmailRequest(BaseModel):
     inbox_id: int | None = None
+    notify_partner_id: int | None = None
     subject: str = ""
     email_from: str = ""
     email_to: str = ""
@@ -117,6 +119,7 @@ class AssistantIncomingEmailResponse(BaseModel):
 
 class AssistantBudgetFromTicketRequest(BaseModel):
     ticket_id: int | None = None
+    notify_partner_id: int | None = None
     title: str = ""
     description: str = ""
     partner_id: int | None = None
@@ -195,6 +198,7 @@ async def assistant_discuss_message(request: AssistantDiscussMessageRequest):
             "ticket_category": request.ticket_category,
             "ticket_type": request.ticket_type,
             "ticket_stage": request.ticket_stage,
+            "assistant_route_name": request.assistant_route_name,
             "channel_id": request.channel_id,
             "channel_name": request.channel_name,
             "message_id": request.message_id,
@@ -222,6 +226,7 @@ async def assistant_incoming_email(request: AssistantIncomingEmailRequest):
     try:
         payload = {
             "inbox_id": request.inbox_id,
+            "notify_partner_id": request.notify_partner_id,
             "subject": request.subject,
             "email_from": request.email_from,
             "email_to": request.email_to,
@@ -251,6 +256,7 @@ async def assistant_budget_from_ticket(request: AssistantBudgetFromTicketRequest
     try:
         ticket = {
             "id": request.ticket_id,
+            "notify_partner_id": request.notify_partner_id,
             "name": request.title,
             "description": request.description,
             "partner_id": request.partner_id,
