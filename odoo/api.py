@@ -118,3 +118,19 @@ class OdooAPI:
         except Fault as fault:
             print(fault.faultString, file=stderr)
             return False
+
+    class NotificationType(StrEnum):
+        Info = 'info'
+        Success = 'success'
+        Warning = 'warning'
+        Danger = 'danger'
+
+    def notification(self, title: str, msg: str, type: NotificationType = NotificationType.Info) -> bool: 
+        user_data = self.get_by_id(Table.User, [self._uid], ['partner_id'])
+        if not user_data or not user_data[0].get('partner_id'):
+            return False 
+
+        target_partner_id = user_data[0]['partner_id'][0]
+        # Call the PUBLIC method we created in our custom module
+        self._query('bus.bus', 'send_rpc_notification', [target_partner_id, title,  msg, type.value])
+        return True

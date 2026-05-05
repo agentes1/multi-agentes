@@ -15,6 +15,7 @@ MODULES = [
     "helpdesk_type",
     "helpdesk_motive",
     "helpdesk_virtual_assistant",
+    'api_notifier',
 ]
 
 PRODUCTS = [
