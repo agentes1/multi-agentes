@@ -397,9 +397,9 @@ El bootstrap:
 2. La extensión de `mail.message` detecta canales con formato `Ticket <id> - Asistente Virtual`.
 3. Ignora mensajes escritos por el propio asistente para evitar bucles.
 4. Llama a `POST /assistant/discuss-message`.
-5. `DiscussMessageOrchestrator` enruta solo el mensaje nuevo, no el título histórico del ticket.
-6. Si el mensaje pide presupuesto, responde que se creará al pasar el ticket a **Ready for next stage**.
-7. Si no es presupuesto, devuelve fallback general o no publica nada útil.
+5. `DiscussMessageOrchestrator` decide la ruta usando el mensaje nuevo junto con contexto reciente del hilo, incluyendo `assistant_route_name` y `recent_messages`.
+6. Si detecta intención de presupuesto o de avanzar el flujo, puede responder con confirmaciones contextualizadas y preparar la siguiente acción esperada.
+7. Además del texto de respuesta o un fallback general, puede devolver `actions` (por ejemplo, `mark_ticket_ready`) para que Odoo ejecute cambios sobre el ticket cuando corresponda.
 
 ---
 
