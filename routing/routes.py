@@ -11,7 +11,6 @@ class RouteDefinition:
 
 budget_route = RouteDefinition(
     name="budget",
-    # Presupuesto exige intención económica clara.
     utterances=(
         "quiero un presupuesto para implantar odoo",
         "necesitamos una propuesta economica para un erp",
@@ -33,7 +32,6 @@ budget_route = RouteDefinition(
 
 sales_route = RouteDefinition(
     name="sales",
-    # Ventas se centra en CRM, leads y oportunidades.
     utterances=(
         "queremos mejorar el proceso comercial",
         "necesitamos organizar oportunidades de venta",
@@ -53,9 +51,27 @@ sales_route = RouteDefinition(
     ),
 )
 
+rag_route = RouteDefinition(
+    name="rag",
+    utterances=(
+        "tengo un problema con odoo",
+        "me da un error al generar la factura",
+        "no puedo acceder al modulo de ventas",
+        "los correos entrantes no se procesan",
+        "el sistema no funciona correctamente",
+        "tengo una incidencia con el helpdesk",
+        "me aparece un error en pantalla",
+        "algo no funciona en odoo",
+    ),
+    keywords=(
+        "error", "problema", "incidencia", "fallo", "no funciona",
+        "no puedo", "no se procesa", "no aparece", "no accedo",
+        "no genera", "no crea", "bug", "issue", "soporte",
+    ),
+)
+
 discard_route = RouteDefinition(
     name="discard",
-    # Consultas generales o sin acción de negocio.
     utterances=(
         "hola que tiempo hace",
         "buenos dias necesito informacion general",
@@ -74,5 +90,4 @@ discard_route = RouteDefinition(
     threshold=0.0,
 )
 
-# Orden de evaluación usado por el router.
-routes = (budget_route, sales_route, discard_route)
+routes = (budget_route, sales_route, rag_route, discard_route)

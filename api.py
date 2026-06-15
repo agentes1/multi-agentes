@@ -5,6 +5,7 @@ Este archivo expone los puntos de entrada externos del sistema:
 - mensaje nuevo en Discuss
 - correo entrante procesado por mail_inbox_input
 - presupuesto creado al marcar un ticket como Ready for next stage
+- consulta RAG sobre tickets resueltos
 
 Cada endpoint delega la lógica real en un orquestador de orchestration/,
 de modo que la API se mantenga como una capa fina de entrada/salida.
@@ -26,13 +27,13 @@ from orchestration.assistant_sales import build_sales_from_ticket_orchestrator
 
 app = FastAPI(title="Multi-agente presupuestos")
 
-# permite llamadas desde herramientas externas y scripts locales
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class AssistantTicketEntryRequest(BaseModel):
     ticket_id: int | None = None
@@ -157,6 +158,18 @@ class AssistantSalesFromTicketResponse(BaseModel):
     crm_summary: dict = Field(default_factory=dict)
     error: str | None = None
     trace: list[str] = Field(default_factory=list)
+
+
+class AssistantRAGRequest(BaseModel):
+    input_text: str = ""
+    thread_id: str | None = None
+
+
+class AssistantRAGResponse(BaseModel):
+    ok: bool
+    reply_text: str = ""
+    retrieved_tickets: list[dict] = Field(default_factory=list)
+    error: str | None = None
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -300,6 +313,28 @@ async def assistant_sales_from_ticket(request: AssistantSalesFromTicketRequest):
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/assistant/rag", response_model=AssistantRAGResponse)
+async def assistant_rag(request: AssistantRAGRequest):
+    try:
+        from agents.rag_agent.graph import build_rag_graph
+        from agents.rag_agent.dependencies import build_dependencies
+
+        deps = build_dependencies()
+        graph = build_rag_graph()
+        result = await graph.ainvoke(
+            {"input_text": request.input_text},
+            config={"configurable": {"deps": deps}},
+        )
+        return {
+            "ok": True,
+            "reply_text": result.get("reply_text", ""),
+            "retrieved_tickets": result.get("retrieved_tickets", []),
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 
 # ─── Frontend estático ────────────────────────────────────────────────────────
