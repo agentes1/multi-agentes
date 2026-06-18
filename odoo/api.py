@@ -1,5 +1,4 @@
 import time
-import time
 import xmlrpc.client
 from enum import StrEnum
 from sys import stderr
@@ -33,39 +32,49 @@ class OdooAPI:
         self._username = username
         self._password = password
         self._db = db
-        self._uid = self._login()
-        self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
+        self._uid = None
+        self._models = None
 
-    def _login(self):
-        common = xmlrpc.client.ServerProxy(f'{self._url}/common')
-        uid = common.authenticate(self._db, self._username, self._password, {})
-        if not uid: raise RuntimeError('URL was correct, but credentials were wrong, don\'t give up you\'re close!')
-        return uid
-
+    def _ensure_connected(self):
+        """Conecta a Odoo si no está conectado todavía."""
+        if self._uid and self._models:
+            return
+        retries = 10
+        for i in range(retries):
+            try:
+                common = xmlrpc.client.ServerProxy(f'{self._url}/common')
+                uid = common.authenticate(self._db, self._username, self._password, {})
+                if not uid:
+                    raise RuntimeError("URL correcta pero credenciales incorrectas.")
+                self._uid = uid
+                self._models = xmlrpc.client.ServerProxy(f'{self._url}/object')
+                print("[OdooAPI] Conexión con Odoo establecida.", file=stderr)
+                return
+            except Exception as e:
+                if i < retries - 1:
+                    print(f"[OdooAPI] Odoo no disponible, reintentando en 5s... ({i+1}/{retries}): {e}", file=stderr)
+                    time.sleep(5)
+                else:
+                    raise RuntimeError(f"No se pudo conectar a Odoo tras {retries} intentos: {e}")
 
     def install(self, module_name: str) -> bool:
-        """
-        Installs an Odoo module by its technical name.
-        """
+        """Instala un módulo de Odoo por su nombre técnico."""
         module_ids = self._query('ir.module.module', 'search', [[['name', '=', module_name]]])
-        if not module_ids: return False # not found
-
+        if not module_ids:
+            return False
         module_data = self._query('ir.module.module', 'read', [module_ids, ['name', 'state']])
         if module_data and module_data[0]["state"] == "installed":
-            return False # already installed
-    
+            return False
         self._query('ir.module.module', 'button_immediate_install', [module_ids])
         return True
 
     def update_module_list(self):
-        """
-        Updates the Odoo apps/module list.
-        Equivalent to clicking 'Update Apps List' in Odoo.
-        """
+        """Actualiza la lista de módulos de Odoo."""
         self._query('ir.module.module', 'update_list')
-    
+
     def _query(self, model: Table | str, method: str, args: list | None = None, kwargs: dict | None = None) -> Any:
         """Ejecuta un método ORM de Odoo."""
+        self._ensure_connected()
         return self._models.execute_kw(self._db, self._uid, self._password, str(model), method, args or [], kwargs or {})
 
     def search_read(self, table: Table, domain: list, fields: list[str] | None = None, limit: int = 1000) -> list[dict] | None:
@@ -83,18 +92,19 @@ class OdooAPI:
         return results or None
 
     def get_by_value(
-        self, 
-        table: Table, 
-        criteria: dict[str, Any], 
+        self,
+        table: Table,
+        criteria: dict[str, Any],
         fields: list[str] | None = None,
-        exact: bool = False, 
-        OR: bool = False, 
+        exact: bool = False,
+        OR: bool = False,
         limit: int = 1000,
     ) -> list[dict] | None:
         """Busca registros por uno o varios campos."""
         operator = "=" if exact else "ilike"
         domain = [(field, operator, value) for field, value in criteria.items()]
-        if OR and len(domain) > 1: domain = ["|"] * (len(domain) - 1) + domain
+        if OR and len(domain) > 1:
+            domain = ["|"] * (len(domain) - 1) + domain
         return self.search_read(table, domain, fields, limit)
 
     def create(self, table: Table, rows: list[dict], context: dict[str, Any] | None = None) -> list[int] | None:
@@ -108,14 +118,16 @@ class OdooAPI:
 
     def delete(self, table: Table, ids: list[int]) -> bool:
         """Elimina registros."""
-        try: return bool(self._query(table, "unlink", [ids]))
+        try:
+            return bool(self._query(table, "unlink", [ids]))
         except Fault as fault:
             print(fault.faultString, file=stderr)
             return False
 
     def archive(self, table: Table, ids: list[int]) -> bool:
         """Archiva registros usando active=False."""
-        try: return bool(self._query(table, "write", [ids, {"active": False}]))
+        try:
+            return bool(self._query(table, "write", [ids, {"active": False}]))
         except Fault as fault:
             print(fault.faultString, file=stderr)
             return False
@@ -126,12 +138,10 @@ class OdooAPI:
         Warning = 'warning'
         Danger = 'danger'
 
-    def notification(self, title: str, msg: str, type: NotificationType = NotificationType.Info) -> bool: 
+    def notification(self, title: str, msg: str, type: NotificationType = NotificationType.Info) -> bool:
         user_data = self.get_by_id(Table.User, [self._uid], ['partner_id'])
         if not user_data or not user_data[0].get('partner_id'):
-            return False 
-
+            return False
         target_partner_id = user_data[0]['partner_id'][0]
-        # Call the PUBLIC method we created in our custom module
-        self._query('bus.bus', 'send_rpc_notification', [target_partner_id, title,  msg, type.value])
+        self._query('bus.bus', 'send_rpc_notification', [target_partner_id, title, msg, type.value])
         return True
