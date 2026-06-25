@@ -104,7 +104,7 @@ intake    budget   sales / general
 | `assistant_chat_agent` | LangChain | Respuestas contextuales en hilos de Discuss |
 | `rag_agent` | LangGraph | Busca tickets resueltos similares y responde con su resolución |
 
-### Flujo principal: email a presupuesto
+### Flujo principal: email a presupuesto 
 
 ```text
 Email  -->  mail_inbox_input (addon)  -->  /assistant/incoming-email
