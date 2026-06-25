@@ -102,6 +102,7 @@ intake    budget   sales / general
 | `sales_agent` | LangGraph | Crea `crm.lead` para oportunidades comerciales |
 | `general_agent` | LangChain | Respuesta de fallback para solicitudes no accionables |
 | `assistant_chat_agent` | LangChain | Respuestas contextuales en hilos de Discuss |
+| `rag_agent` | LangGraph | Busca tickets resueltos similares y responde con su resolución |
 
 ### Flujo principal: email a presupuesto
 
@@ -114,6 +115,19 @@ Email  -->  mail_inbox_input (addon)  -->  /assistant/incoming-email
   -->  Respuesta en Discuss
 ```
 
+### Flujo RAG: ticket de soporte
+
+```text
+Ticket nuevo en Helpdesk
+  -->  helpdesk_virtual_assistant (addon)  -->  /assistant/ticket-entry
+  -->  SemanticRouter detecta ruta "rag" (términos de soporte/incidencia)
+  -->  RAGAgent busca tickets resueltos similares por similitud de keywords
+  -->  Si encuentra coincidencias: responde con la resolución del ticket anterior
+  -->  Si no encuentra: fallback a general_agent
+  -->  Respuesta en Discuss
+```
+
+El agente RAG indexa los tickets resueltos en memoria y los consulta en cada nueva solicitud de soporte. No requiere embeddings ni dependencias externas — usa búsqueda por similitud de keywords para mantener el sistema 100% local con Ollama.
 ---
 
 ## Stack tecnologico
