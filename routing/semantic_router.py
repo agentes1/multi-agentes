@@ -144,6 +144,10 @@ class SemanticTicketRouter:
         sales_hits = count_hits(text, SALES_TERMS)
         budget_keyword_hits = len(tokens & tokenize(" ".join(budget_route.keywords)))
 
+        # 3. Soporte claro sin intención comercial/económica → agente RAG
+        if support_hits >= 1 and commercial_hits == 0 and sales_hits == 0:
+            return RouteMatch("rag", 1.0, "priority_rag_match")
+
         # 1. Sales explícito: no debe morir como discard por llevar "soporte" o "incidencia".
         if sales_route and (has_any(text, SALES_ACTION_TERMS) or sales_hits >= 2) and commercial_hits == 0:
             return RouteMatch("sales", 1.0, "priority_sales_match")
@@ -152,10 +156,7 @@ class SemanticTicketRouter:
         if commercial_hits >= 1 and (scope_hits >= 1 or budget_keyword_hits >= 2):
             return RouteMatch("budget", 1.0, "priority_budget_match")
 
-        # 3. Soporte claro sin intención comercial/económica: no es budget ni sales.
-        if support_hits >= 1 and commercial_hits == 0 and sales_hits == 0:
-            return RouteMatch(discard_route.name, 1.0, "priority_support_discard_match")
-
+        
         return None
 
     def _best_scored_route(self, text: str, tokens: set[str]) -> RouteMatch:
